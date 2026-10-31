@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /Users/tmason/Downloads/ESP32-P4-PC-main && echo \"=== Top-level of repo ===\" && find . -maxdepth 2 -not -path '*/.git/*' -type d | sort | head -60)",
+      "Read(//Users/tmason/**)",
+      "WebSearch",
+      "WebFetch(domain:www.waveshare.com)"
+    ]
+  }
+}

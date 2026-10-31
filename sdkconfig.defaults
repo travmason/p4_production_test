@@ -1,0 +1,49 @@
+# Keep defaults minimal; HDMI/LT8912B settings are under BSP menuconfig.
+
+CONFIG_FREERTOS_HZ=1000
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# --- Display: 1600x720 bar panel over HDMI (LT8912B) ---
+# The LT8912B path requires RGB888.
+CONFIG_BSP_LCD_TYPE_HDMI=y
+# The LT8912B path requires an RGB888 frame buffer. An RGB565 frame buffer with
+# RGB888 on the wire would be a third less PSRAM traffic, but the DSI bridge can
+# only convert on ESP32-P4 rev 3.0+; on earlier silicon the input and output
+# format registers alias, and the panel shows solid blue.
+CONFIG_BSP_LCD_COLOR_FORMAT_RGB888=y
+CONFIG_BSP_LCD_HDMI_1600x720_60HZ=y
+CONFIG_BSP_LCD_USE_DMA2D=y
+# 1600x720 RGB888 @ 80 MHz pclk needs >= 960 Mbps/lane; 1200 leaves headroom.
+CONFIG_BSP_LCD_MIPI_DSI_LANE_BITRATE_MBPS=1200
+# One 1600*720*3 = 3.3 MB DPI framebuffer in PSRAM.
+CONFIG_BSP_LCD_DPI_BUFFER_NUMS=1
+
+# PSRAM is mandatory: the framebuffer does not fit in internal RAM.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_SPIRAM_SPEED_200M=y
+
+# The DSI bridge streams the whole framebuffer out of PSRAM every frame
+# (1600*720*3 @ 60 Hz = 207 MB/s). At the 128 KB / 64-byte-line default this
+# underruns roughly once every 10 s, which can flash the panel blue. Wider cache
+# lines make those bursts efficient enough to keep up. 512 KB also works for the
+# cache but leaves too little internal SRAM to link.
+CONFIG_CACHE_L2_CACHE_256KB=y
+CONFIG_CACHE_L2_CACHE_LINE_128B=y
+
+# Large fonts for dashboard readability.
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
+CONFIG_LV_FONT_MONTSERRAT_48=y
+
+# The 3.3 MB background is embedded in the app, which needs more than the
+# 1.5 MB that singleapp_large provides. See partitions.csv.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# LVGL allocates from the ESP heap rather than its own fixed pool. The 64 kB
+# builtin pool is far too small once there is more than one screen's worth of
+# widgets - lv_malloc starts failing inside the draw dispatcher, which then
+# spins instead of completing a frame - and a pool big enough is a static
+# array too large to link. The ESP heap can spill into PSRAM.
+CONFIG_LV_USE_CLIB_MALLOC=y

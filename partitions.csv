@@ -1,0 +1,8 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# The app carries the 3.3 MB dashboard background, so the factory partition is
+# sized well past the 1.5 MB that singleapp_large would give. Flash is 16 MB.
+# The partition table itself sits at 0x10000 (CONFIG_PARTITION_TABLE_OFFSET),
+# so the first partition must start above it.
+nvs,      data, nvs,     0x11000, 0x6000,
+phy_init, data, phy,     0x17000, 0x1000,
+factory,  app,  factory, 0x20000, 6M,

@@ -1,7 +1,16 @@
 # Keep defaults minimal; HDMI/LT8912B settings are under BSP menuconfig.
 
+# Target. Pinned here so a fresh checkout builds with a plain `idf.py build` and
+# so the target survives sdkconfig being regenerated.
+CONFIG_IDF_TARGET="esp32p4"
+
 CONFIG_FREERTOS_HZ=1000
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# app_main builds the whole LVGL screen tree on its own stack; the IDF default
+# of 3584 bytes is tight and was never run-tested. The validated firmware used
+# 12288.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=12288
 
 # --- Display: 1600x720 bar panel over HDMI (LT8912B) ---
 # The LT8912B path requires RGB888.
@@ -11,6 +20,10 @@ CONFIG_BSP_LCD_TYPE_HDMI=y
 # only convert on ESP32-P4 rev 3.0+; on earlier silicon the input and output
 # format registers alias, and the panel shows solid blue.
 CONFIG_BSP_LCD_COLOR_FORMAT_RGB888=y
+# LVGL colour depth must match the RGB888 framebuffer above. If this drops to 16
+# (the LVGL default) the framebuffer becomes RGB565 and the panel shows solid
+# blue on rev v1.0 silicon - see the note above.
+CONFIG_LV_COLOR_DEPTH_24=y
 CONFIG_BSP_LCD_HDMI_1600x720_60HZ=y
 CONFIG_BSP_LCD_USE_DMA2D=y
 # 1600x720 RGB888 @ 80 MHz pclk needs >= 960 Mbps/lane; 1200 leaves headroom.
@@ -36,10 +49,17 @@ CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_FONT_MONTSERRAT_28=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
 
+# The board has 16 MB flash. Without this the build falls back to the 2 MB
+# default and the 6 MB factory partition will not fit.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
 # The 3.3 MB background is embedded in the app, which needs more than the
-# 1.5 MB that singleapp_large provides. See partitions.csv.
+# 1.5 MB that singleapp_large provides. See partitions.csv. The table sits at
+# 0x10000 (partitions.csv places the first partition at 0x11000); the 0x8000
+# default would not match it.
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x10000
 
 # LVGL allocates from the ESP heap rather than its own fixed pool. The 64 kB
 # builtin pool is far too small once there is more than one screen's worth of
@@ -47,3 +67,8 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # spins instead of completing a frame - and a pool big enough is a static
 # array too large to link. The ESP heap can spill into PSRAM.
 CONFIG_LV_USE_CLIB_MALLOC=y
+
+# USB host hub support, for the (currently parked) USB touch path: the panel's
+# touch sits behind the board's FE1.1s hub, so without this nothing on USB
+# enumerates. Harmless when no USB device is attached.
+CONFIG_USB_HOST_HUBS_SUPPORTED=y

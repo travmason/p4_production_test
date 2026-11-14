@@ -110,10 +110,12 @@ void dash_show(lv_obj_t *o, bool on, bool *state)
 
 #define SEG_STATE_ON      LV_STATE_CHECKED
 #define SEG_STATE_DANGER  LV_STATE_USER_1
+#define SEG_STATE_ALARM   LV_STATE_USER_2   /* unlit, but outlined in red */
 
 static lv_style_t style_seg_off;
 static lv_style_t style_seg_on;
 static lv_style_t style_seg_danger;
+static lv_style_t style_seg_alarm;
 static bool       styles_ready;
 
 static void seg_style(lv_style_t *s, uint32_t top, uint32_t bottom, uint32_t border)
@@ -138,6 +140,7 @@ static void styles_init(void)
     seg_style(&style_seg_off, 0x241B10, 0x1B140B, 0x3E301C);
     seg_style(&style_seg_on, 0xFFD27A, 0xD8860F, 0xFFE7B0);
     seg_style(&style_seg_danger, 0xFF7A55, 0xC81509, 0xFFA98F);
+    seg_style(&style_seg_alarm, 0x3A0A06, 0x2A0604, 0xE0180C);
 }
 
 void dash_segbar_create(segbar_t *b, lv_obj_t *parent, int32_t x, int32_t y,
@@ -162,6 +165,7 @@ void dash_segbar_create(segbar_t *b, lv_obj_t *parent, int32_t x, int32_t y,
         lv_obj_add_style(o, &style_seg_off, LV_STATE_DEFAULT);
         lv_obj_add_style(o, &style_seg_on, SEG_STATE_ON);
         lv_obj_add_style(o, &style_seg_danger, SEG_STATE_DANGER);
+        lv_obj_add_style(o, &style_seg_alarm, SEG_STATE_ALARM);
         if (vertical) {
             /* index 0 at the bottom, so the bar grows upward */
             lv_obj_set_size(o, w, seg);
@@ -184,9 +188,11 @@ static bool is_danger(const segbar_t *b, int i)
 
 static void restyle(const segbar_t *b, uint8_t i)
 {
-    lv_obj_remove_state(b->seg[i], SEG_STATE_ON | SEG_STATE_DANGER);
+    lv_obj_remove_state(b->seg[i], SEG_STATE_ON | SEG_STATE_DANGER | SEG_STATE_ALARM);
     if (b->alarm) {
-        lv_obj_add_state(b->seg[i], SEG_STATE_DANGER);
+        /* The whole gauge red: what pressure there is filled in, the rest
+           empty with a red outline. One state each, never both. */
+        lv_obj_add_state(b->seg[i], i < b->lit ? SEG_STATE_DANGER : SEG_STATE_ALARM);
     } else if (i < b->lit) {
         lv_obj_add_state(b->seg[i], is_danger(b, i) ? SEG_STATE_DANGER : SEG_STATE_ON);
     }
@@ -207,14 +213,10 @@ void dash_segbar_set(segbar_t *b, float frac)
         return;
     }
 
-    /* Restyle only the segments that actually crossed the threshold. During
-       an alarm they are all red already, so only the level is remembered. */
+    /* Restyle only the segments that actually crossed the threshold. */
     const uint8_t lo = lit < b->lit ? lit : b->lit;
     const uint8_t hi = lit > b->lit ? lit : b->lit;
     b->lit = lit;
-    if (b->alarm) {
-        return;
-    }
     for (uint8_t i = lo; i < hi; i++) {
         restyle(b, i);
     }

@@ -76,8 +76,9 @@ void dash_segbar_create(segbar_t *b, lv_obj_t *parent, int32_t x, int32_t y,
                         int32_t gap, uint8_t danger, bool danger_at_low);
 void dash_segbar_set(segbar_t *b, float frac);
 
-/** Alarm: every segment red, whatever the level. The level is still tracked,
-    and shown again when the alarm clears. */
+/** Alarm: the whole gauge turns red. Segments up to the level are filled red,
+    the rest are empty with a red outline - so with no pressure at all it is an
+    empty red gauge. */
 void dash_segbar_set_alarm(segbar_t *b, bool alarm);
 
 /** 0..1 position of v between lo and hi, unclamped. */

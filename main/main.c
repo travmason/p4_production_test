@@ -112,13 +112,10 @@ static void button_task(void *arg)
         const bool boot = gpio_get_level(BOOT_BTN_GPIO) == 0;   /* active low */
         const bool ext  = gpio_get_level(EXT_BTN_GPIO) == 0;
 
-        /* Either button advances, on the press edge only. */
+        /* Either button advances, on the press edge only. This only posts a
+           request; the LVGL task makes the change, so no display lock here. */
         if ((boot && !prev_boot) || (ext && !prev_ext)) {
-            /* Screen changes touch LVGL objects, so take the lock. */
-            if (bsp_display_lock(200)) {
-                dash_ui_next_screen();
-                bsp_display_unlock();
-            }
+            dash_ui_next_screen();
         }
         prev_boot = boot;
         prev_ext  = ext;

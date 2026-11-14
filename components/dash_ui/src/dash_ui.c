@@ -1,5 +1,7 @@
 #include "dash_ui.h"
 
+#include <stdatomic.h>
+
 #include "dash_signals.h"
 #include "dash_ui_common.h"
 #include "dash_ui_screens.h"
@@ -105,9 +107,41 @@ static void gesture_cb(lv_event_t *e)
     }
 }
 
+/*
+ * Screen-change requests from other tasks.
+ *
+ * The button and CAN tasks do not touch LVGL themselves. They leave a request
+ * here and the refresh timer, which already runs in the LVGL task with the
+ * lock held, carries it out. That keeps a first-time screen build - a hundred
+ * or more objects - off those tasks' small stacks, and means a press is never
+ * lost because the display lock happened to be busy.
+ */
+static atomic_int s_req_step;        /* net next (+) / previous (-) not yet applied */
+static atomic_int s_req_abs = -1;    /* screen selected outright, or -1 for none */
+
+static void apply_requests(void)
+{
+    const int abs  = atomic_exchange(&s_req_abs, -1);
+    const int step = atomic_exchange(&s_req_step, 0);
+
+    if (abs >= 0 && abs < NUM_SCREENS) {
+        /* Animate in whichever direction the index moved. */
+        switch_to(abs, abs > s_active);
+    }
+    if (step != 0) {
+        int idx = (s_active + step) % NUM_SCREENS;
+        if (idx < 0) {
+            idx += NUM_SCREENS;
+        }
+        switch_to(idx, step > 0);
+    }
+}
+
 static void refresh_cb(lv_timer_t *timer)
 {
     (void)timer;
+
+    apply_requests();
 
     dash_signals_t s;
     dash_signals_get(&s);
@@ -136,12 +170,12 @@ esp_err_t dash_ui_create(lv_display_t *disp)
 
 void dash_ui_next_screen(void)
 {
-    switch_to(s_active + 1, true);
+    atomic_fetch_add(&s_req_step, 1);
 }
 
 void dash_ui_prev_screen(void)
 {
-    switch_to(s_active - 1, false);
+    atomic_fetch_sub(&s_req_step, 1);
 }
 
 void dash_ui_set_screen(int index)
@@ -149,8 +183,7 @@ void dash_ui_set_screen(int index)
     if (index < 0 || index >= NUM_SCREENS) {
         return;
     }
-    /* Animate in whichever direction the index moved. */
-    switch_to(index, index > s_active);
+    atomic_store(&s_req_abs, index);
 }
 
 int dash_ui_screen_count(void)

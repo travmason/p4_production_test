@@ -1,6 +1,7 @@
 #include "dash_can.h"
 
-#include "bsp/esp-bsp.h"
+#include <inttypes.h>
+
 #include "dash_ui.h"
 #include "driver/twai.h"
 #include "esp_log.h"
@@ -23,18 +24,14 @@ static bool timing_for(uint32_t bps, twai_timing_config_t *out)
     }
 }
 
-/* Screen commands touch LVGL objects, so they run under the display lock. */
+/* The dash_ui screen calls only post a request, which the LVGL task acts on, so
+   nothing here needs the display lock and the receive loop never waits on it. */
 static void handle_screen_cmd(const twai_message_t *msg)
 {
     if (msg->data_length_code < 1) {
         return;
     }
     const uint8_t cmd = msg->data[0];
-
-    if (!bsp_display_lock(200)) {
-        ESP_LOGW(TAG, "dropped screen command 0x%02x: display busy", cmd);
-        return;
-    }
 
     if (cmd == DASH_CAN_SCREEN_NEXT) {
         dash_ui_next_screen();
@@ -43,19 +40,23 @@ static void handle_screen_cmd(const twai_message_t *msg)
     } else if (cmd >= DASH_CAN_SCREEN_ABS_BASE) {
         dash_ui_set_screen(cmd - DASH_CAN_SCREEN_ABS_BASE);
     }
-
-    bsp_display_unlock();
 }
+
+/* Receive timeout while the bus is healthy. Finite rather than portMAX_DELAY so
+   a bus-off still gets noticed. */
+#define RX_IDLE_TIMEOUT_MS  1000
+/* How often to look at the driver state while it is not running. */
+#define RX_DOWN_POLL_MS     100
 
 static void can_task(void *arg)
 {
     (void)arg;
 
+    TickType_t rx_timeout = pdMS_TO_TICKS(RX_IDLE_TIMEOUT_MS);
+
     while (true) {
         twai_message_t msg;
-        /* Long timeout rather than portMAX_DELAY so a bus-off state still gets
-           noticed and reported below. */
-        const esp_err_t err = twai_receive(&msg, pdMS_TO_TICKS(1000));
+        const esp_err_t err = twai_receive(&msg, rx_timeout);
         if (err == ESP_OK) {
             s_rx_count++;
             if (msg.identifier == s_cfg.screen_cmd_id && !msg.rtr) {
@@ -66,17 +67,48 @@ static void can_task(void *arg)
             continue;
         }
         if (err != ESP_ERR_TIMEOUT) {
-            continue;
+            /* Not expected, but never spin on an error that returns at once. */
+            vTaskDelay(pdMS_TO_TICKS(RX_DOWN_POLL_MS));
         }
 
-        /* Recover from a bus-off, which happens if the bus is unterminated or
-           the transceiver is missing while we are not in listen-only mode. */
+        /*
+         * Bus-off recovery. A bus-off happens when transmits keep failing - an
+         * unterminated bus, or a missing transceiver, while not in listen-only
+         * mode. Recovery is three driver states, and each has to be seen:
+         *
+         *   BUS_OFF     ask the controller to start recovering
+         *   RECOVERING  it is counting 128 x 11 recessive bits; on a noisy or
+         *               stuck bus that takes arbitrarily long, so just wait
+         *   STOPPED     recovery finished and left the driver stopped; only
+         *               now will twai_start() succeed
+         *
+         * Nothing else in this component stops the driver, so STOPPED always
+         * means "recovered, restart me".
+         */
         twai_status_info_t st;
-        if (twai_get_status_info(&st) == ESP_OK && st.state == TWAI_STATE_BUS_OFF) {
+        if (twai_get_status_info(&st) != ESP_OK) {
+            continue;
+        }
+        switch (st.state) {
+        case TWAI_STATE_BUS_OFF:
             ESP_LOGW(TAG, "bus-off, recovering");
             twai_initiate_recovery();
-            vTaskDelay(pdMS_TO_TICKS(100));
-            twai_start();
+            rx_timeout = pdMS_TO_TICKS(RX_DOWN_POLL_MS);
+            break;
+        case TWAI_STATE_RECOVERING:
+            rx_timeout = pdMS_TO_TICKS(RX_DOWN_POLL_MS);
+            break;
+        case TWAI_STATE_STOPPED:
+            if (twai_start() == ESP_OK) {
+                ESP_LOGI(TAG, "bus recovered, receiving again");
+                rx_timeout = pdMS_TO_TICKS(RX_IDLE_TIMEOUT_MS);
+            } else {
+                rx_timeout = pdMS_TO_TICKS(RX_DOWN_POLL_MS);
+            }
+            break;
+        default:
+            rx_timeout = pdMS_TO_TICKS(RX_IDLE_TIMEOUT_MS);
+            break;
         }
     }
 }

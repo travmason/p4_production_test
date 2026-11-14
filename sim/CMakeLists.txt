@@ -87,3 +87,15 @@ target_include_directories(dash_sim PRIVATE
 )
 target_compile_options(dash_sim PRIVATE -Wall -Wextra)
 target_link_libraries(dash_sim PRIVATE lvgl m pthread)
+
+# ---- Host tests ---------------------------------------------------------------
+# Pure-C pieces of the firmware that need no board: `ctest --test-dir sim/build`.
+enable_testing()
+add_executable(test_rusefi
+    "${ROOT}/tests/test_rusefi.c"
+    "${COMP}/dash_can/src/dash_rusefi.c"
+)
+target_include_directories(test_rusefi PRIVATE "${COMP}/dash_can/include")
+target_compile_options(test_rusefi PRIVATE -Wall -Wextra)
+target_link_libraries(test_rusefi PRIVATE m)
+add_test(NAME rusefi_decoder COMMAND test_rusefi)

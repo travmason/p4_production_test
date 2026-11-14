@@ -118,3 +118,13 @@ add_executable(test_oil_alarm
 target_include_directories(test_oil_alarm PRIVATE "${COMP}/dash_can/include")
 target_compile_options(test_oil_alarm PRIVATE -Wall -Wextra)
 add_test(NAME oil_alarm COMMAND test_oil_alarm)
+
+add_executable(test_gps
+    "${ROOT}/tests/test_gps.c"
+    "${COMP}/dash_gps_proto/src/dash_gps_proto.c"
+    "${COMP}/dash_gps_proto/src/dash_ubx.c"
+)
+target_include_directories(test_gps PRIVATE "${COMP}/dash_gps_proto/include")
+target_compile_options(test_gps PRIVATE -Wall -Wextra)
+target_link_libraries(test_gps PRIVATE m)
+add_test(NAME gps COMMAND test_gps)

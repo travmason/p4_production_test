@@ -150,6 +150,7 @@ void dash_segbar_create(segbar_t *b, lv_obj_t *parent, int32_t x, int32_t y,
     b->lit           = 0;
     b->danger        = danger;
     b->danger_at_low = danger_at_low;
+    b->alarm         = false;
 
     const int32_t span = vertical ? h : w;
     const int32_t seg = (span - gap * (b->count - 1)) / b->count;
@@ -181,6 +182,16 @@ static bool is_danger(const segbar_t *b, int i)
     return b->danger_at_low ? (i < b->danger) : (i >= b->count - b->danger);
 }
 
+static void restyle(const segbar_t *b, uint8_t i)
+{
+    lv_obj_remove_state(b->seg[i], SEG_STATE_ON | SEG_STATE_DANGER);
+    if (b->alarm) {
+        lv_obj_add_state(b->seg[i], SEG_STATE_DANGER);
+    } else if (i < b->lit) {
+        lv_obj_add_state(b->seg[i], is_danger(b, i) ? SEG_STATE_DANGER : SEG_STATE_ON);
+    }
+}
+
 void dash_segbar_set(segbar_t *b, float frac)
 {
     if (frac < 0.0f) {
@@ -196,14 +207,26 @@ void dash_segbar_set(segbar_t *b, float frac)
         return;
     }
 
-    /* Restyle only the segments that actually crossed the threshold. */
+    /* Restyle only the segments that actually crossed the threshold. During
+       an alarm they are all red already, so only the level is remembered. */
     const uint8_t lo = lit < b->lit ? lit : b->lit;
     const uint8_t hi = lit > b->lit ? lit : b->lit;
-    for (uint8_t i = lo; i < hi; i++) {
-        lv_obj_remove_state(b->seg[i], SEG_STATE_ON | SEG_STATE_DANGER);
-        if (i < lit) {
-            lv_obj_add_state(b->seg[i], is_danger(b, i) ? SEG_STATE_DANGER : SEG_STATE_ON);
-        }
-    }
     b->lit = lit;
+    if (b->alarm) {
+        return;
+    }
+    for (uint8_t i = lo; i < hi; i++) {
+        restyle(b, i);
+    }
+}
+
+void dash_segbar_set_alarm(segbar_t *b, bool alarm)
+{
+    if (alarm == b->alarm) {
+        return;
+    }
+    b->alarm = alarm;
+    for (uint8_t i = 0; i < b->count; i++) {
+        restyle(b, i);
+    }
 }

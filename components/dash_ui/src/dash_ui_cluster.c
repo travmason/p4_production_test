@@ -82,8 +82,11 @@ static const struct {
 #define HIGH_BEAM_R    0x2F
 #define HIGH_BEAM_G    0x7B
 #define HIGH_BEAM_B    0xFF
-/* Centre of the gap left of the brake lamp. */
-#define OIL_CX         (TT_BRAKE_X - 46)
+/* The "psi" caption and oil can over the pressure bar, in the background. */
+#define OIL_ICON_X     876
+#define OIL_ICON_Y     166
+#define OIL_ICON_W     56
+#define OIL_ICON_H     70
 
 /* Ice warning sits above the outside temperature it belongs to. Its sprite is
    erased from the artwork's telltale row, so this is the only place it shows. */
@@ -118,7 +121,8 @@ static struct {
     uint32_t  telltale_shown;
 
     lv_obj_t *snow;        /* driven by outside temperature, not a telltale bit */
-    lv_obj_t *oil;         /* text: the artwork has no oil lamp */
+    lv_obj_t *oil;         /* red copy of the oil pressure caption; may be NULL */
+    bool      oil_alarm;
     bool      oil_shown;
     lv_obj_t *high_beam;   /* the headlight lamp, recoloured blue; may be NULL */
     bool      high_beam_shown;
@@ -238,58 +242,68 @@ static void arc_set(arcgauge_t *g, float frac)
  * ------------------------------------------------------------------------- */
 
 /*
- * A blue copy of the headlight lamp, for high beam.
+ * A recoloured copy of part of an opaque picture: each pixel keeps its
+ * brightness and takes the given colour.
  *
- * The sprites are opaque pictures on black, so LVGL's recolour would tint the
- * black as well and give a blue box. Instead each pixel's brightness is kept
- * and its colour replaced. Built once, a couple of kilobytes; if the memory is
- * not there, high beam falls back to lighting the green lamp.
+ * The artwork is opaque pictures on black, so LVGL's own recolour would tint
+ * the black as well and give a coloured box. Built once per use, a few
+ * kilobytes each. Returns NULL if the memory is not there.
  */
-static lv_obj_t *high_beam_sprite(lv_obj_t *parent)
+static lv_obj_t *tinted_sprite(lv_obj_t *parent, const lv_image_dsc_t *src,
+                               int32_t sx, int32_t sy, int32_t w, int32_t h,
+                               uint32_t tr, uint32_t tg, uint32_t tb,
+                               int32_t x, int32_t y)
 {
-    static lv_image_dsc_t dsc;
-    const lv_image_dsc_t *src = &dash_img_tt_headlight;
+    const bool rgb565 = src->header.cf == LV_COLOR_FORMAT_RGB565;
+    const uint32_t bpp = rgb565 ? 2 : 3;
 
-    uint8_t *px = malloc(src->data_size);
-    if (px == NULL) {
+    lv_image_dsc_t *dsc = malloc(sizeof(*dsc) + (size_t)w * h * bpp);
+    if (dsc == NULL) {
         return NULL;
     }
+    uint8_t *px = (uint8_t *)(dsc + 1);
 
-    const uint32_t count = (uint32_t)src->header.w * src->header.h;
-    const bool rgb565 = src->header.cf == LV_COLOR_FORMAT_RGB565;
-    for (uint32_t i = 0; i < count; i++) {
-        uint32_t r, g, b;
-        if (rgb565) {
-            const uint16_t v = (uint16_t)(src->data[i * 2] | (src->data[i * 2 + 1] << 8));
-            r = ((v >> 11) & 0x1F) * 255 / 31;
-            g = ((v >> 5) & 0x3F) * 255 / 63;
-            b = (v & 0x1F) * 255 / 31;
-        } else {
-            b = src->data[i * 3];
-            g = src->data[i * 3 + 1];
-            r = src->data[i * 3 + 2];
-        }
-        uint32_t level = r > g ? r : g;
-        if (b > level) {
-            level = b;
-        }
-        r = HIGH_BEAM_R * level / 255;
-        g = HIGH_BEAM_G * level / 255;
-        b = HIGH_BEAM_B * level / 255;
-        if (rgb565) {
-            const uint16_t v = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
-            px[i * 2]     = (uint8_t)(v & 0xFF);
-            px[i * 2 + 1] = (uint8_t)(v >> 8);
-        } else {
-            px[i * 3]     = (uint8_t)b;
-            px[i * 3 + 1] = (uint8_t)g;
-            px[i * 3 + 2] = (uint8_t)r;
+    for (int32_t row = 0; row < h; row++) {
+        const uint8_t *in = src->data + (size_t)(sy + row) * src->header.stride + (size_t)sx * bpp;
+        uint8_t *out = px + (size_t)row * w * bpp;
+        for (int32_t i = 0; i < w; i++) {
+            uint32_t r, g, b;
+            if (rgb565) {
+                const uint16_t v = (uint16_t)(in[i * 2] | (in[i * 2 + 1] << 8));
+                r = ((v >> 11) & 0x1F) * 255 / 31;
+                g = ((v >> 5) & 0x3F) * 255 / 63;
+                b = (v & 0x1F) * 255 / 31;
+            } else {
+                b = in[i * 3];
+                g = in[i * 3 + 1];
+                r = in[i * 3 + 2];
+            }
+            uint32_t level = r > g ? r : g;
+            if (b > level) {
+                level = b;
+            }
+            r = tr * level / 255;
+            g = tg * level / 255;
+            b = tb * level / 255;
+            if (rgb565) {
+                const uint16_t v = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+                out[i * 2]     = (uint8_t)(v & 0xFF);
+                out[i * 2 + 1] = (uint8_t)(v >> 8);
+            } else {
+                out[i * 3]     = (uint8_t)b;
+                out[i * 3 + 1] = (uint8_t)g;
+                out[i * 3 + 2] = (uint8_t)r;
+            }
         }
     }
 
-    dsc = *src;
-    dsc.data = px;
-    return dash_sprite(parent, &dsc, TT_HEADLIGHT_X, TT_HEADLIGHT_Y);
+    *dsc = *src;
+    dsc->header.w = (uint32_t)w;
+    dsc->header.h = (uint32_t)h;
+    dsc->header.stride = (uint32_t)(w * bpp);
+    dsc->data_size = (uint32_t)(w * h * bpp);
+    dsc->data = px;
+    return dash_sprite(parent, dsc, x, y);
 }
 
 lv_obj_t *dash_screen_cluster_create(void)
@@ -352,15 +366,19 @@ lv_obj_t *dash_screen_cluster_create(void)
         ui.telltale[i]     = dash_sprite(scr, kTelltales[i].src, kTelltales[i].x, kTelltales[i].y);
         ui.telltale_bit[i] = kTelltales[i].bit;
     }
-    ui.high_beam = high_beam_sprite(scr);
+    /* High beam: the headlight lamp in blue. If this fails, high beam falls
+       back to lighting the green lamp. */
+    ui.high_beam = tinted_sprite(scr, &dash_img_tt_headlight, 0, 0,
+                                 TT_HEADLIGHT_W, TT_HEADLIGHT_H,
+                                 HIGH_BEAM_R, HIGH_BEAM_G, HIGH_BEAM_B,
+                                 TT_HEADLIGHT_X, TT_HEADLIGHT_Y);
     ui.telltale_shown = 0;
 
-    /* Low oil pressure. The artwork's lamp row has no oil can, so this is red
-       text in the gap at the row's left end, where the snowflake used to be. */
-    ui.oil = dash_label(scr, OIL_CX, TT_WARNING_Y + TT_WARNING_H / 2, 70,
-                        &lv_font_montserrat_28, COL_RED);
-    lv_label_set_text(ui.oil, "OIL");
-    lv_obj_add_flag(ui.oil, LV_OBJ_FLAG_HIDDEN);
+    /* Low oil pressure: the "psi" caption and oil can above the pressure bar,
+       lifted from the background and turned red, to lay over the amber ones. */
+    ui.oil = tinted_sprite(scr, &dash_img_bg, OIL_ICON_X, OIL_ICON_Y,
+                           OIL_ICON_W, OIL_ICON_H, 0xFF, 0x00, 0x00,
+                           OIL_ICON_X, OIL_ICON_Y);
     ui.oil_shown = false;
     ui.high_beam_shown = false;
 
@@ -402,11 +420,23 @@ void dash_screen_cluster_refresh(const dash_signals_t *s)
 
     dash_show(ui.snow, s->ambient_temp_c < OAT_ICE_C, &ui.snow_shown);
 
-    dash_show(ui.oil, (s->telltales & DASH_TT_OIL) != 0, &ui.oil_shown);
+    /* Low oil pressure has no lamp of its own. The pressure gauge goes red -
+       bar and caption - and the general warning lamp lights with it. */
+    const bool oil_alarm = (s->telltales & DASH_TT_OIL) != 0;
+    if (oil_alarm != ui.oil_alarm) {
+        ui.oil_alarm = oil_alarm;
+        dash_segbar_set_alarm(&ui.oil_press, oil_alarm);
+        if (ui.oil != NULL) {
+            dash_show(ui.oil, oil_alarm, &ui.oil_shown);
+        }
+    }
 
     /* High beam has no lamp of its own in the artwork either: the headlight
        lamp shows in the conventional blue instead of green. */
     uint32_t want = s->telltales;
+    if (oil_alarm) {
+        want |= DASH_TT_WARNING;
+    }
     const bool high_beam = (want & DASH_TT_HIGH_BEAM) != 0;
     if (ui.high_beam != NULL) {
         dash_show(ui.high_beam, high_beam, &ui.high_beam_shown);

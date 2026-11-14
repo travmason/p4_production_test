@@ -68,12 +68,17 @@ typedef struct {
     uint8_t   lit;
     uint8_t   danger;
     bool      danger_at_low;
+    bool      alarm;
 } segbar_t;
 
 void dash_segbar_create(segbar_t *b, lv_obj_t *parent, int32_t x, int32_t y,
                         int32_t w, int32_t h, uint8_t count, bool vertical,
                         int32_t gap, uint8_t danger, bool danger_at_low);
 void dash_segbar_set(segbar_t *b, float frac);
+
+/** Alarm: every segment red, whatever the level. The level is still tracked,
+    and shown again when the alarm clears. */
+void dash_segbar_set_alarm(segbar_t *b, bool alarm);
 
 /** 0..1 position of v between lo and hi, unclamped. */
 static inline float dash_norm(float v, float lo, float hi)

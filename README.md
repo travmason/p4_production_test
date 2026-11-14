@@ -103,7 +103,7 @@ work with the ECU, the CAN bus or the GPS node down. All on the EXT1 header:
 | Headlights           | 19   | 13       | Green headlight lamp                  |
 | High beam            | 33   | 16       | Headlight lamp in blue                |
 | Handbrake / brake warning | 46 | 18     | Red brake lamp                        |
-| Oil pressure switch  | 47   | 19       | Red "OIL"                             |
+| Oil pressure switch  | 47   | 19       | Pressure gauge red, plus warning lamp |
 | spare                | 48   | 20       | -                                     |
 
 Use one optocoupler channel per circuit (PC817 or similar; a ready-made

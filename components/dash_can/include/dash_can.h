@@ -11,9 +11,10 @@
  * dash runs in normal mode and acknowledges frames. Listen-only is for tapping
  * a bus that already has two acknowledging nodes.
  *
- * If the ECU stops sending for a second, everything it supplied is cleared to
- * zero and the source chip reads NO ECU, rather than leaving the last values
- * frozen on the gauges.
+ * If the ECU stops sending for a second, what it supplied is cleared to zero
+ * and the source label reads NO ECU, rather than leaving the last values
+ * frozen on the gauges. Speed and distance are the exception: they belong to
+ * the GPS node whenever it is on the bus, and an ECU fault does not touch them.
  *
  * Whether decoded values reach the gauges at all is up to dash_source: while
  * the simulator is selected they are decoded and held, not shown.

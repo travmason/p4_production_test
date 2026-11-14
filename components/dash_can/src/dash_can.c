@@ -21,6 +21,19 @@ static dash_rusefi_t  s_ecu;
 static TickType_t     s_ecu_last_rx;
 static volatile bool  s_ecu_online;
 
+/*
+ * Speed and distance are not the ECU's alone. The GPS node puts them on the
+ * same bus and is the better source, so whenever it is being heard it owns
+ * them and the ECU's copies are ignored - and losing the ECU must then leave
+ * them alone. The ECU's vehicle speed is the fallback while there is no GPS.
+ *
+ * The GPS node's frames are not decoded yet, so this is always false for now.
+ */
+static bool gps_online(void)
+{
+    return false;
+}
+
 /* No verbose frame for this long means the ECU is off or unplugged. The ECU
    sends the whole set many times a second, so this is generous. */
 #define ECU_TIMEOUT_MS        1000
@@ -71,7 +84,7 @@ static void apply_ecu(const dash_rusefi_t *e)
     if (e->has & DASH_RUSEFI_HAS_RPM) {
         dash_signals_set_rpm(e->rpm);
     }
-    if (e->has & DASH_RUSEFI_HAS_SPEED) {
+    if ((e->has & DASH_RUSEFI_HAS_SPEED) && !gps_online()) {
         dash_signals_set_speed_kmh(e->speed_kmh);
     }
     if (e->has & DASH_RUSEFI_HAS_COOLANT) {
@@ -92,8 +105,10 @@ static void apply_ecu(const dash_rusefi_t *e)
     if (e->has & DASH_RUSEFI_HAS_STATUS) {
         dash_signals_set_gear(e->gear);
         /* Distance since the ECU powered up. It stands in for the trip meter
-           until the GPS node provides a kept odometer. */
-        dash_signals_set_trip_km(e->distance_km);
+           while there is no GPS node providing a kept odometer. */
+        if (!gps_online()) {
+            dash_signals_set_trip_km(e->distance_km);
+        }
         dash_signals_set_telltale(DASH_TT_CHECK_ENGINE, e->check_engine);
     }
     if ((e->has & DASH_RUSEFI_HAS_BATTERY) && (e->has & DASH_RUSEFI_HAS_RPM)) {
@@ -118,8 +133,13 @@ static void ecu_lost(void)
         return;   /* the simulator has the gauges */
     }
 
+    /* Only what the ECU was actually supplying. Speed and distance stay as
+       they are when the GPS node has them; trip and odometer are never
+       zeroed, since a stopped feed does not un-travel the distance. */
+    if (!gps_online()) {
+        dash_signals_set_speed_kmh(0.0f);
+    }
     dash_signals_set_rpm(0.0f);
-    dash_signals_set_speed_kmh(0.0f);
     dash_signals_set_coolant_temp_c(0.0f);
     dash_signals_set_fuel_level_pct(0.0f);
     dash_signals_set_oil_temp_c(0.0f);

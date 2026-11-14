@@ -137,8 +137,12 @@ and pressure, manifold pressure (shown as boost against a standard atmosphere),
 fuel level, gear, check-engine, and a charge warning when the engine is turning
 below 12.0 V. The trip meter shows the ECU's distance since power-up.
 
-If the ECU stops sending for one second, everything it supplied drops to zero
-and the label reads NO ECU, rather than the last values staying frozen.
+If the ECU stops sending for one second, what it supplied drops to zero and the
+label reads NO ECU, rather than the last values staying frozen. Speed and
+distance are meant to come from the GPS node on the same bus, with the ECU's
+vehicle speed as the fallback, so an ECU fault will not zero them once that
+node exists. Until it does, the ECU is the only speed source and speed drops
+to zero with it.
 
 The decoder is `components/dash_can/src/dash_rusefi.c`. It is tested on the Mac
 against the layout in rusEFI's `rusEFI_CAN_verbose.dbc`:

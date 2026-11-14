@@ -184,13 +184,15 @@ void app_main(void)
     if (bsp_display_lock(portMAX_DELAY)) {
         lv_display_set_default(disp);
         dash_ui_create(disp);
-        bsp_display_unlock();
-    }
 
-    /* Touch is optional: the cluster runs fine without a digitizer attached,
-       it just cannot be swiped. */
-    if (dash_touch_start(disp) != ESP_OK) {
-        ESP_LOGW(TAG, "touch input unavailable");
+        /* Touch is optional: the cluster runs fine without a digitizer
+           attached, it just cannot be swiped. Started under the lock because
+           it registers an LVGL input device, and the LVGL task is already
+           running on the other core. */
+        if (dash_touch_start(disp) != ESP_OK) {
+            ESP_LOGW(TAG, "touch input unavailable");
+        }
+        bsp_display_unlock();
     }
 
     xTaskCreate(button_task, "screen_btn", 3072, NULL, 3, NULL);

@@ -21,6 +21,9 @@ extern "C" {
  * Safe to call before the panel is plugged in; the device is picked up
  * whenever it appears. Returns once the USB task is running, not once a
  * device is found.
+ *
+ * Must be called with the LVGL lock held (bsp_display_lock), because it
+ * registers an input device. It does not block.
  */
 esp_err_t dash_touch_start(lv_display_t *disp);
 

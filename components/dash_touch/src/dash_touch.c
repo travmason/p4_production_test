@@ -125,7 +125,14 @@ static bool parse_report_descriptor(const uint8_t *d, size_t len, touch_layout_t
             if (report_id != (uint8_t)val) {
                 report_id = (uint8_t)val;
                 bit_offset = 0;
-                got_x = got_y = false;
+                /* A report that had only some of the fields is abandoned.
+                   Once a complete contact has been found it is kept: panels
+                   commonly follow the touch report with a mouse-emulation
+                   one, whose X/Y must not replace it. */
+                if (!out->valid) {
+                    got_x = got_y = false;
+                    out->tip_bit = UINT16_MAX;
+                }
             }
             break;
         case 0x80:  /* Input (main) */
@@ -137,19 +144,24 @@ static bool parse_report_descriptor(const uint8_t *d, size_t len, touch_layout_t
                 const uint16_t id = (uint16_t)(u & 0xFFFF);
                 const uint32_t at = bit_offset + f * report_size;
 
-                if (in_digitizer && up == UP_GENERIC_DESKTOP && id == USAGE_X && !got_x) {
+                const bool xy_open = in_digitizer && !out->valid &&
+                                     up == UP_GENERIC_DESKTOP;
+
+                if (xy_open && id == USAGE_X && !got_x) {
                     out->x_bit = (uint16_t)at;
                     out->x_size = (uint16_t)report_size;
                     out->x_max = (int32_t)logical_max;
                     out->report_id = report_id;
                     got_x = true;
-                } else if (in_digitizer && up == UP_GENERIC_DESKTOP && id == USAGE_Y && !got_y) {
+                } else if (xy_open && id == USAGE_Y && !got_y) {
                     out->y_bit = (uint16_t)at;
                     out->y_size = (uint16_t)report_size;
                     out->y_max = (int32_t)logical_max;
                     got_y = true;
                 } else if (up == UP_DIGITIZER && id == USAGE_TIP_SWITCH &&
-                           out->tip_bit == UINT16_MAX) {
+                           out->tip_bit == UINT16_MAX &&
+                           (!out->valid || report_id == out->report_id)) {
+                    /* Only a tip switch from the same report as the contact. */
                     out->tip_bit = (uint16_t)at;
                 }
             }
@@ -330,9 +342,15 @@ static void device_event_cb(hid_host_device_handle_t dev,
  * USB host plumbing
  * ------------------------------------------------------------------------- */
 
+static void hub_release_reset(void);
+
 static void usb_task(void *arg)
 {
     (void)arg;
+
+    /* Done here rather than in dash_touch_start() so its delays are not spent
+       with the caller holding the LVGL lock. */
+    hub_release_reset();
 
     /*
      * Default PHY setup - do NOT take USB_PHY_TARGET_INT here.
@@ -415,8 +433,6 @@ esp_err_t dash_touch_start(lv_display_t *disp)
     }
     t.disp = disp;
     t.layout.tip_bit = UINT16_MAX;
-
-    hub_release_reset();
 
     if (xTaskCreate(usb_task, "usb_host", 4096, NULL, 6, NULL) != pdPASS) {
         return ESP_ERR_NO_MEM;

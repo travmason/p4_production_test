@@ -269,6 +269,10 @@ lv_obj_t *dash_screen_track_create(void)
     lv_label_set_text(unit, "km/h");
     ui.speed.obj = dash_label(scr, SPEED_CX, SPEED_CY, 620,
                               &lv_font_dash_digits_120, COL_WHITE);
+    /* The 120 px face carries digits, '.' and space only, so dash_label()'s
+       "--" placeholder would draw as two missing-glyph boxes until the first
+       refresh. Start these two empty instead. */
+    lv_label_set_text(ui.speed.obj, "");
 
     /* ---- gear ---- */
     lv_obj_t *gear_lbl = dash_label(scr, GEAR_CX, GEAR_CY - 122, 260,
@@ -276,6 +280,7 @@ lv_obj_t *dash_screen_track_create(void)
     lv_label_set_text(gear_lbl, "GEAR");
     ui.gear.obj = dash_label(scr, GEAR_CX, GEAR_CY, 280,
                              &lv_font_dash_digits_120, COL_WHITE);
+    lv_label_set_text(ui.gear.obj, "");
 
     /* Dotted rule linking the two, as on the original. */
     for (int32_t x = SPEED_CX + 250; x < GEAR_CX - 160; x += 24) {

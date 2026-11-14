@@ -21,6 +21,20 @@ void dash_value_set(value_t *v, const char *fmt, float x)
 {
     char next[sizeof(v->shown)];
     snprintf(next, sizeof(next), fmt, x);
+
+    /* A small negative rounds to "-0" or "-0.0" - an outside temperature just
+       below freezing, boost a hair into vacuum. A reading of zero has no sign,
+       so drop the minus when every digit of the number is zero. */
+    if (next[0] == '-') {
+        const char *p = next + 1;
+        while (*p == '0' || *p == '.') {
+            p++;
+        }
+        if (*p < '1' || *p > '9') {
+            memmove(next, next + 1, strlen(next));
+        }
+    }
+
     dash_text_set(v, next);
 }
 

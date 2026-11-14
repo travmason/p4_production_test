@@ -23,7 +23,7 @@
  *       M  step the data source (auto, simulated, live)
  *       E  connect / disconnect the pretend ECU
  * Dragging up or down with the mouse swipes, as a finger would on the panel,
- * and holding the mouse on the source chip (bottom left) steps the source.
+ * and holding the mouse on the source chip (top left) steps the source.
  *
  * There is no CAN here, so the pretend ECU supplies no values: with it
  * connected in live mode the gauges read zero and the chip says LIVE.

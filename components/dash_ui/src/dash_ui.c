@@ -142,7 +142,7 @@ static void apply_requests(void)
  * through screen-change animations without being rebuilt.
  */
 #define CHIP_X       10
-#define CHIP_BOTTOM  8
+#define CHIP_Y       8
 
 static atomic_int s_chip_req = DASH_UI_CHIP_SIM;
 static int        s_chip_shown = -1;
@@ -165,7 +165,8 @@ static void chip_create(void)
     lv_obj_set_style_pad_ver(s_chip, 4, 0);
     lv_obj_set_style_radius(s_chip, 6, 0);
     lv_obj_set_style_border_width(s_chip, 2, 0);
-    lv_obj_align(s_chip, LV_ALIGN_BOTTOM_LEFT, CHIP_X, -CHIP_BOTTOM);
+    /* Top left is the one corner all three screens leave empty. */
+    lv_obj_align(s_chip, LV_ALIGN_TOP_LEFT, CHIP_X, CHIP_Y);
     /* A fingertip is far bigger than the label. */
     lv_obj_set_ext_click_area(s_chip, 28);
     lv_obj_add_flag(s_chip, LV_OBJ_FLAG_CLICKABLE);
@@ -182,15 +183,16 @@ static void chip_refresh(void)
 
     const char *text;
     lv_color_t  fg, bg, border;
-    lv_opa_t    bg_opa = LV_OPA_COVER;
+    lv_opa_t    opa = LV_OPA_COVER;
 
     switch (want) {
     case DASH_UI_CHIP_LIVE:
+        /* Nothing to say when the feed is real and healthy. The label keeps
+           its size and stays touchable, just invisible, so holding the same
+           corner still steps the source. */
         text = "LIVE";
-        fg = COL_DIM;
-        bg = lv_color_black();
-        border = COL_DIM;
-        bg_opa = LV_OPA_TRANSP;
+        fg = bg = border = lv_color_black();
+        opa = LV_OPA_TRANSP;
         break;
     case DASH_UI_CHIP_NO_ECU:
         text = "NO ECU";
@@ -208,7 +210,8 @@ static void chip_refresh(void)
     lv_label_set_text(s_chip, text);
     lv_obj_set_style_text_color(s_chip, fg, 0);
     lv_obj_set_style_bg_color(s_chip, bg, 0);
-    lv_obj_set_style_bg_opa(s_chip, bg_opa, 0);
+    lv_obj_set_style_bg_opa(s_chip, LV_OPA_COVER, 0);
+    lv_obj_set_style_opa(s_chip, opa, 0);
     lv_obj_set_style_border_color(s_chip, border, 0);
 }
 

@@ -12,8 +12,8 @@ history.
 ## Status
 
 - The gauges show either **simulated data** (`dash_source_sim`, a made-up drive
-  cycle) or the ECU's, chosen by the data source mode below. A chip in the
-  bottom-left corner of every screen always says which.
+  cycle) or the ECU's, chosen by the data source mode below. A label in the
+  top-left corner of every screen marks simulated data and a silent ECU.
 - ECU data is rusEFI's native "verbose" CAN broadcast. Not yet tried against a
   real ECU.
 - Lights, indicators, odometer and outside temperature have no real source yet.
@@ -97,8 +97,9 @@ The on-board BOOT button (GPIO35) also changes screen.
 
 ## Data source
 
-A chip in the bottom-left corner shows where the numbers come from: amber
-**SIM**, dim **LIVE**, or red **NO ECU** (live selected, ECU silent).
+A label in the top-left corner appears whenever the numbers are not a
+healthy live feed: amber **SIM**, or red **NO ECU** (live selected, ECU silent).
+With the ECU feeding the gauges nothing is shown.
 
 | Mode | Behaviour |
 |------|-----------|
@@ -108,7 +109,8 @@ A chip in the bottom-left corner shows where the numbers come from: amber
 
 The mode is kept in flash. To step through auto, simulated, live:
 
-- press and hold the chip on the touch screen;
+- press and hold the top-left corner of the touch screen, where the label
+  appears (it responds even when nothing is shown);
 - hold either screen button for 1.5 seconds;
 - or send CAN ID `0x600` with byte 0 = `0x20` auto, `0x21` simulated, `0x22` live.
 
@@ -136,7 +138,7 @@ fuel level, gear, check-engine, and a charge warning when the engine is turning
 below 12.0 V. The trip meter shows the ECU's distance since power-up.
 
 If the ECU stops sending for one second, everything it supplied drops to zero
-and the chip reads NO ECU, rather than the last values staying frozen.
+and the label reads NO ECU, rather than the last values staying frozen.
 
 The decoder is `components/dash_can/src/dash_rusefi.c`. It is tested on the Mac
 against the layout in rusEFI's `rusEFI_CAN_verbose.dbc`:

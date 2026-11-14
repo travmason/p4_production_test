@@ -42,13 +42,14 @@ void dash_ui_set_screen(int index);
 int dash_ui_screen_count(void);
 
 /*
- * The source chip: a small label in the bottom-left corner of every screen
- * saying where the numbers come from. It is always there, so simulated data
- * can never be mistaken for the car's.
+ * The source chip: a small label in the top-left corner of every screen
+ * that appears whenever the numbers are not a healthy live feed, so simulated
+ * data can never be mistaken for the car's. With the ECU feeding the gauges it
+ * shows nothing, but the corner still responds to a press and hold.
  */
 typedef enum {
     DASH_UI_CHIP_SIM = 0,   /*!< amber "SIM" */
-    DASH_UI_CHIP_LIVE,      /*!< dim "LIVE" */
+    DASH_UI_CHIP_LIVE,      /*!< nothing shown */
     DASH_UI_CHIP_NO_ECU,    /*!< red "NO ECU" */
 } dash_ui_source_chip_t;
 

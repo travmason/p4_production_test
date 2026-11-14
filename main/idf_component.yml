@@ -15,4 +15,6 @@ dependencies:
   #   # All dependencies of `main` are public by default.
   #   public: true
   espressif/usb: ^1.1.0
-  espressif/usb_host_msc: ^1.1.4
+  # Pinned to the release the dashboard was validated on. Without this the
+  # component manager moves to the newest 9.x whenever any manifest changes.
+  lvgl/lvgl: "9.5.0"

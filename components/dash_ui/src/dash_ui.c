@@ -145,6 +145,7 @@ static void apply_requests(void)
 #define CHIP_Y       8
 
 static atomic_int s_chip_req = DASH_UI_CHIP_SIM;
+static atomic_bool s_gps_warn;
 static int        s_chip_shown = -1;
 static lv_obj_t  *s_chip;
 static void     (*s_chip_cb)(void);
@@ -175,7 +176,9 @@ static void chip_create(void)
 
 static void chip_refresh(void)
 {
-    const int want = atomic_load(&s_chip_req);
+    const int  state = atomic_load(&s_chip_req);
+    const bool no_gps = state != DASH_UI_CHIP_SIM && atomic_load(&s_gps_warn);
+    const int  want = state | (no_gps ? 0x100 : 0);
     if (want == s_chip_shown || s_chip == NULL) {
         return;
     }
@@ -185,8 +188,15 @@ static void chip_refresh(void)
     lv_color_t  fg, bg, border;
     lv_opa_t    opa = LV_OPA_COVER;
 
-    switch (want) {
+    switch (state) {
     case DASH_UI_CHIP_LIVE:
+        if (no_gps) {
+            text = "NO GPS";
+            fg = COL_WHITE;
+            bg = lv_color_hex(0xC00000);
+            border = bg;
+            break;
+        }
         /* Nothing to say when the feed is real and healthy. The label keeps
            its size and stays touchable, just invisible, so holding the same
            corner still steps the source. */
@@ -195,7 +205,7 @@ static void chip_refresh(void)
         opa = LV_OPA_TRANSP;
         break;
     case DASH_UI_CHIP_NO_ECU:
-        text = "NO ECU";
+        text = no_gps ? "NO ECU / GPS" : "NO ECU";
         fg = COL_WHITE;
         bg = lv_color_hex(0xC00000);
         border = bg;
@@ -270,6 +280,11 @@ void dash_ui_set_screen(int index)
 void dash_ui_set_source_chip(dash_ui_source_chip_t state)
 {
     atomic_store(&s_chip_req, (int)state);
+}
+
+void dash_ui_set_gps_warning(bool no_gps)
+{
+    atomic_store(&s_gps_warn, no_gps);
 }
 
 void dash_ui_set_source_chip_cb(void (*on_hold)(void))

@@ -128,3 +128,12 @@ target_include_directories(test_gps PRIVATE "${COMP}/dash_gps_proto/include")
 target_compile_options(test_gps PRIVATE -Wall -Wextra)
 target_link_libraries(test_gps PRIVATE m)
 add_test(NAME gps COMMAND test_gps)
+
+add_executable(test_odo
+    "${ROOT}/tests/test_odo.c"
+    "${COMP}/dash_odo/src/dash_odo_core.c"
+)
+target_include_directories(test_odo PRIVATE "${COMP}/dash_odo/include")
+target_compile_options(test_odo PRIVATE -Wall -Wextra)
+target_link_libraries(test_odo PRIVATE m)
+add_test(NAME odometer COMMAND test_odo)

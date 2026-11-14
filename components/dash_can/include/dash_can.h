@@ -5,7 +5,8 @@
  *
  *   - the rusEFI ECU's native "verbose" broadcast, decoded by dash_rusefi and
  *     pushed into dash_signals (see dash_rusefi.h for the ECU settings);
- *   - screen-selection commands from the rotary controller.
+ *   - the GPS node's frames (see dash_gps_proto.h): speed, position and time;
+ *   - commands on one ID: screen selection, data source, trip and odometer.
  *
  * The bus is small and private - ECU, dash, and later the GPS node - so the
  * dash runs in normal mode and acknowledges frames. Listen-only is for tapping
@@ -54,6 +55,11 @@ typedef enum {
     DASH_CAN_SCREEN_ABS_BASE = 0x10,
     /** 0x20 + m selects data source m: 0 auto, 1 simulated, 2 live. */
     DASH_CAN_SOURCE_BASE = 0x20,
+    /** Zero the trip meter. */
+    DASH_CAN_TRIP_RESET = 0x30,
+    /** Set the odometer: bytes 1-4 are whole kilometres, little-endian. For
+        commissioning; it also zeroes the trip. */
+    DASH_CAN_ODO_SET = 0x31,
 } dash_can_screen_cmd_t;
 
 typedef struct {
@@ -82,6 +88,9 @@ typedef struct {
  * driver still installs; it simply never sees a frame.
  */
 esp_err_t dash_can_start(const dash_can_cfg_t *cfg);
+
+/** True while the GPS node is being heard, with or without a fix. */
+bool dash_can_gps_online(void);
 
 /** True while the ECU's broadcast is arriving. Safe from any task. */
 bool dash_can_ecu_online(void);

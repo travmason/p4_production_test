@@ -57,6 +57,7 @@ typedef struct {
     int         source;        /* dash_source_mode_t */
     bool        ecu;
     long        lamps;         /* dash_telltale_t bits to force on, or -1 */
+    bool        no_gps;        /* show the GPS warning */
 } options_t;
 
 void sim_set_saved_source(int value);   /* shim/shim.c */
@@ -80,6 +81,7 @@ static void usage(const char *argv0)
             "  --after SECONDS     how long to run before the screenshot (default 5)\n"
             "  --source MODE       data source: auto (default), sim or live\n"
             "  --ecu               pretend the ECU is connected\n"
+            "  --no-gps            show the NO GPS warning (live modes only)\n"
             "  --lamps BITS        live mode with these lamps lit, e.g. 0x3ff for all\n"
             "\n"
             "keys: Space/Right/Down next, Left/Up previous, 1-3 select, Esc/Q quit\n"
@@ -115,6 +117,8 @@ static bool parse_options(int argc, char **argv, options_t *o)
             }
         } else if (strcmp(argv[i], "--lamps") == 0 && has_value) {
             o->lamps = strtol(argv[++i], NULL, 0);
+        } else if (strcmp(argv[i], "--no-gps") == 0) {
+            o->no_gps = true;
         } else if (strcmp(argv[i], "--ecu") == 0) {
             o->ecu = true;
         } else {
@@ -328,6 +332,7 @@ int main(int argc, char **argv)
         return 1;
     }
     dash_ui_set_source_chip_cb(dash_source_cycle_mode);
+    dash_ui_set_gps_warning(o.no_gps);
     if (o.lamps >= 0) {
         /* Stands in for dash_inputs: wait for the source manager's wipe on
            entering live mode, then light the lamps. */

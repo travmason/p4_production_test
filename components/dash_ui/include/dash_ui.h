@@ -57,6 +57,12 @@ typedef enum {
 void dash_ui_set_source_chip(dash_ui_source_chip_t state);
 
 /**
+ * Add a GPS warning to the chip: "NO GPS", alongside NO ECU if that is showing
+ * too. Ignored while simulated data is on screen. Safe from any task.
+ */
+void dash_ui_set_gps_warning(bool no_gps);
+
+/**
  * Called, in the LVGL task, when the chip is pressed and held. A hold rather
  * than a tap so that a brushed finger changes nothing. The callback must not
  * block; posting a request to another task is the intended use.

@@ -1,11 +1,16 @@
 #include "dash_can.h"
 
 #include <inttypes.h>
+#include <sys/time.h>
+#include <time.h>
 
+#include "dash_gps_proto.h"
+#include "dash_odo.h"
 #include "dash_oil_alarm.h"
 #include "dash_rusefi.h"
 #include "dash_signals.h"
 #include "dash_source.h"
+#include "dash_store.h"
 #include "dash_ui.h"
 #include "driver/twai.h"
 #include "esp_log.h"
@@ -23,17 +28,55 @@ static TickType_t     s_ecu_last_rx;
 static volatile bool  s_ecu_online;
 static dash_oil_alarm_t s_oil_alarm;
 
+/* GPS node link. Written by the CAN task only. */
+static dash_gps_fix_t s_gps;
+static TickType_t     s_gps_last_rx;
+static volatile bool  s_gps_node_online;   /* the node is being heard */
+static bool           s_gps_expected;      /* a node has been seen on this car */
+static bool           s_speed_from_gps;    /* who fed the odometer last */
+
+#define GPS_TIMEOUT_MS        1000
+#define KEY_GPS_SEEN          "gps_seen"
+
+static uint32_t now_ms(void)
+{
+    return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+}
+
 /*
  * Speed and distance are not the ECU's alone. The GPS node puts them on the
- * same bus and is the better source, so whenever it is being heard it owns
- * them and the ECU's copies are ignored - and losing the ECU must then leave
- * them alone. The ECU's vehicle speed is the fallback while there is no GPS.
- *
- * The GPS node's frames are not decoded yet, so this is always false for now.
+ * same bus and is the better source, so whenever it has a fix it owns them and
+ * the ECU's copies are ignored - and losing the ECU then leaves them alone.
+ * The ECU's vehicle speed is the fallback: with no node, or a node without a
+ * fix (a tunnel, a cold start), speed and distance come from the ECU.
  */
 static bool gps_online(void)
 {
-    return false;
+    return s_gps_node_online && (s_gps.flags & DASH_GPS_FLAG_FIX_OK) != 0;
+}
+
+/* Feed the odometer from whichever source owns speed. When ownership changes
+   hands the two clocks of samples are not joined up. */
+static void odo_sample(bool from_gps, float speed_kmh)
+{
+    if (from_gps != s_speed_from_gps) {
+        s_speed_from_gps = from_gps;
+        dash_odo_break();
+    }
+    dash_odo_sample(speed_kmh, now_ms());
+}
+
+/* The odometer is the dash's own, so it is shown whoever is or is not on the
+   bus - but not over the simulator's made-up one. */
+static void publish_odo(void)
+{
+    if (!dash_source_live_writes_allowed()) {
+        return;
+    }
+    float odo, trip;
+    dash_odo_get(&odo, &trip);
+    dash_signals_set_odometer_km(odo);
+    dash_signals_set_trip_km(trip);
 }
 
 /* No verbose frame for this long means the ECU is off or unplugged. The ECU
@@ -68,6 +111,15 @@ static void handle_screen_cmd(const twai_message_t *msg)
 
     if (cmd >= DASH_CAN_SOURCE_BASE && cmd < DASH_CAN_SOURCE_BASE + DASH_SOURCE_NUM_MODES) {
         dash_source_set_mode((dash_source_mode_t)(cmd - DASH_CAN_SOURCE_BASE));
+        return;
+    }
+    if (cmd == DASH_CAN_TRIP_RESET) {
+        dash_odo_reset_trip();
+        return;
+    }
+    if (cmd == DASH_CAN_ODO_SET && msg->data_length_code >= 5) {
+        dash_odo_set_total_km((uint32_t)msg->data[1] | ((uint32_t)msg->data[2] << 8) |
+                              ((uint32_t)msg->data[3] << 16) | ((uint32_t)msg->data[4] << 24));
         return;
     }
     if (cmd == DASH_CAN_SCREEN_NEXT) {
@@ -106,11 +158,6 @@ static void apply_ecu(const dash_rusefi_t *e)
     }
     if (e->has & DASH_RUSEFI_HAS_STATUS) {
         dash_signals_set_gear(e->gear);
-        /* Distance since the ECU powered up. It stands in for the trip meter
-           while there is no GPS node providing a kept odometer. */
-        if (!gps_online()) {
-            dash_signals_set_trip_km(e->distance_km);
-        }
         dash_signals_set_telltale(DASH_TT_CHECK_ENGINE, e->check_engine);
     }
     /* Low oil pressure, judged here from the ECU's sensor: the gauge goes red
@@ -138,15 +185,17 @@ static void ecu_lost(void)
     s_ecu_online = false;
     s_ecu = (dash_rusefi_t) {0};
     s_oil_alarm = (dash_oil_alarm_t) {0};
+    if (!gps_online()) {
+        dash_odo_break();   /* the ECU was feeding the odometer */
+    }
     ESP_LOGW(TAG, "ECU silent for %d ms", ECU_TIMEOUT_MS);
 
     if (!dash_source_live_writes_allowed()) {
         return;   /* the simulator has the gauges */
     }
 
-    /* Only what the ECU was actually supplying. Speed and distance stay as
-       they are when the GPS node has them; trip and odometer are never
-       zeroed, since a stopped feed does not un-travel the distance. */
+    /* Only what the ECU was actually supplying. Speed stays as it is when
+       the GPS node has it, and the odometer is nobody's to zero. */
     if (!gps_online()) {
         dash_signals_set_speed_kmh(0.0f);
     }
@@ -171,11 +220,90 @@ static void handle_ecu_frame(const twai_message_t *msg)
         s_ecu_online = true;
         ESP_LOGI(TAG, "ECU online");
     }
+    /* Distance is counted whatever the screen is showing. The speed frame is
+       the one that carries a fresh sample. */
+    if (msg->identifier == s_cfg.ecu_base_id + 1 && !gps_online()) {
+        odo_sample(false, s_ecu.speed_kmh);
+    }
     /* Decoding carries on regardless, so the values are current the moment
        the source is switched to live. */
     if (dash_source_live_writes_allowed()) {
         apply_ecu(&s_ecu);
     }
+}
+
+/* Days since 1970-01-01 for a proleptic Gregorian date (Howard Hinnant's
+   days_from_civil), so UTC needs no help from the C library's time zone. */
+static int64_t days_from_civil(int y, unsigned m, unsigned d)
+{
+    y -= m <= 2;
+    const int64_t era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned yoe = (unsigned)(y - era * 400);
+    const unsigned doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + (int64_t)doe - 719468;
+}
+
+/* Keep the system clock on GPS time. Local time is the TZ variable's job. */
+static void set_clock_from_gps(const dash_gps_fix_t *g)
+{
+    if (g->year < 2024 || g->month < 1 || g->month > 12 || g->day < 1 || g->day > 31 ||
+        g->hour > 23 || g->minute > 59 || g->second > 60) {
+        return;
+    }
+    const time_t utc = (time_t)(days_from_civil(g->year, g->month, g->day) * 86400 +
+                                g->hour * 3600 + g->minute * 60 + g->second);
+    const time_t have = time(NULL);
+    const int64_t off = (int64_t)utc - (int64_t)have;
+    if (off > 1 || off < -1) {
+        const struct timeval tv = { .tv_sec = utc, .tv_usec = 0 };
+        settimeofday(&tv, NULL);
+        ESP_LOGI(TAG, "clock set from GPS: %04u-%02u-%02u %02u:%02u:%02u UTC",
+                 g->year, g->month, g->day, g->hour, g->minute, g->second);
+    }
+}
+
+static void gps_lost(void)
+{
+    s_gps_node_online = false;
+    s_gps.flags = 0;
+    ESP_LOGW(TAG, "GPS node silent for %d ms", GPS_TIMEOUT_MS);
+    dash_odo_break();
+
+    /* Speed falls back to the ECU, whose next frame supplies it. With no ECU
+       either there is no speed to show. */
+    if (!s_ecu_online && dash_source_live_writes_allowed()) {
+        dash_signals_set_speed_kmh(0.0f);
+    }
+}
+
+static bool handle_gps_frame(const twai_message_t *msg)
+{
+    if (!dash_gps_unpack(msg->identifier, msg->data, msg->data_length_code, &s_gps)) {
+        return false;
+    }
+    s_gps_last_rx = xTaskGetTickCount();
+    if (!s_gps_node_online) {
+        s_gps_node_online = true;
+        ESP_LOGI(TAG, "GPS node online");
+        if (!s_gps_expected) {
+            /* From now on this car is expected to have GPS, and its absence
+               is worth a warning. Written once in the board's life. */
+            s_gps_expected = true;
+            dash_store_set_u32(KEY_GPS_SEEN, 1);
+        }
+    }
+
+    if (msg->identifier == DASH_GPS_ID_MOTION && gps_online()) {
+        odo_sample(true, s_gps.speed_kmh);
+        if (dash_source_live_writes_allowed()) {
+            dash_signals_set_speed_kmh(s_gps.speed_kmh);
+        }
+    } else if (msg->identifier == DASH_GPS_ID_TIME &&
+               (s_gps.flags & DASH_GPS_FLAG_TIME_VALID)) {
+        set_clock_from_gps(&s_gps);
+    }
+    return true;
 }
 
 /* Receive timeout while the bus is healthy. Finite rather than portMAX_DELAY so
@@ -197,6 +325,13 @@ static void can_task(void *arg)
             (xTaskGetTickCount() - s_ecu_last_rx) > pdMS_TO_TICKS(ECU_TIMEOUT_MS)) {
             ecu_lost();
         }
+        if (s_gps_node_online &&
+            (xTaskGetTickCount() - s_gps_last_rx) > pdMS_TO_TICKS(GPS_TIMEOUT_MS)) {
+            gps_lost();
+        }
+        /* Warn about GPS only on a car that has had it. */
+        dash_ui_set_gps_warning(s_gps_expected && !gps_online());
+        publish_odo();
 
         twai_message_t msg;
         const esp_err_t err = twai_receive(&msg, rx_timeout);
@@ -207,7 +342,7 @@ static void can_task(void *arg)
             }
             if (msg.identifier == s_cfg.screen_cmd_id) {
                 handle_screen_cmd(&msg);
-            } else {
+            } else if (!handle_gps_frame(&msg)) {
                 handle_ecu_frame(&msg);
             }
             continue;
@@ -265,6 +400,7 @@ esp_err_t dash_can_start(const dash_can_cfg_t *cfg)
         return ESP_ERR_INVALID_ARG;
     }
     s_cfg = *cfg;
+    s_gps_expected = dash_store_get_u32(KEY_GPS_SEEN, 0) != 0;
 
     twai_timing_config_t t_cfg;
     if (!timing_for(s_cfg.bitrate_bps, &t_cfg)) {
@@ -307,6 +443,11 @@ esp_err_t dash_can_start(const dash_can_cfg_t *cfg)
              s_cfg.screen_cmd_id);
     ESP_LOGI(TAG, "an external 3.3V transceiver is required on these pins");
     return ESP_OK;
+}
+
+bool dash_can_gps_online(void)
+{
+    return s_gps_node_online;
 }
 
 bool dash_can_ecu_online(void)

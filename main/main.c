@@ -20,6 +20,7 @@
 #include "driver/gpio.h"
 #include "dash_can.h"
 #include "dash_inputs.h"
+#include "dash_odo.h"
 #include "dash_signals.h"
 #include "dash_source.h"
 #include "dash_touch.h"
@@ -139,8 +140,24 @@ static void button_task(void *arg)
     }
 }
 
+/*
+ * Local time zone, as a POSIX TZ string. The GPS node supplies UTC; this turns
+ * it into the time on the clock. Examples:
+ *
+ *   "UTC0"                              UTC
+ *   "AEST-10AEDT,M10.1.0,M4.1.0/3"      Sydney, Melbourne
+ *   "AEST-10"                           Brisbane
+ *   "NZST-12NZDT,M9.5.0,M4.1.0/3"       New Zealand
+ *   "GMT0BST,M3.5.0/1,M10.5.0"          United Kingdom
+ *   "EST5EDT,M3.2.0,M11.1.0"            US Eastern
+ *   "PST8PDT,M3.2.0,M11.1.0"            US Pacific
+ */
+#define DASH_TIMEZONE  "UTC0"
+
 void app_main(void)
 {
+    setenv("TZ", DASH_TIMEZONE, 1);
+    tzset();
     seed_clock_from_build_time();
 
     ESP_LOGI(TAG, "PSRAM free: %u KB, internal free: %u KB",
@@ -212,6 +229,11 @@ void app_main(void)
     }
 
     xTaskCreate(button_task, "screen_btn", 3072, NULL, 3, NULL);
+
+    /* Odometer and trip, kept in flash. Before CAN, which feeds it. */
+    if (dash_odo_start() != ESP_OK) {
+        ESP_LOGW(TAG, "odometer unavailable");
+    }
 
     /* CAN. Needs an external 3.3V transceiver on the EXT1 header - see
        dash_can.h. Failing to start is not fatal; the dash runs regardless. */

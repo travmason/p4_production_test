@@ -33,8 +33,8 @@ static const input_def_t kInputs[] = {
     {GPIO_NUM_19, DASH_TT_HEADLIGHT,  true, "headlights"},        /* EXT1 pin 13 */
     {GPIO_NUM_33, DASH_TT_HIGH_BEAM,  true, "high beam"},         /* EXT1 pin 16 */
     {GPIO_NUM_46, DASH_TT_BRAKE,      true, "handbrake / brake"}, /* EXT1 pin 18 */
-    {GPIO_NUM_47, DASH_TT_OIL,        true, "oil pressure"},      /* EXT1 pin 19 */
-    /* GPIO48 (EXT1 pin 20) is free for one more. */
+    /* GPIO47 and GPIO48 (EXT1 pins 19 and 20) are free for two more. Oil
+       pressure is not here: it comes from the ECU's sensor over CAN. */
 };
 #define NUM_INPUTS ((int)(sizeof(kInputs) / sizeof(kInputs[0])))
 

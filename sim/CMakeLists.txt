@@ -110,3 +110,11 @@ add_executable(test_debounce
 target_include_directories(test_debounce PRIVATE "${COMP}/dash_inputs/include")
 target_compile_options(test_debounce PRIVATE -Wall -Wextra)
 add_test(NAME debounce COMMAND test_debounce)
+
+add_executable(test_oil_alarm
+    "${ROOT}/tests/test_oil_alarm.c"
+    "${COMP}/dash_can/src/dash_oil_alarm.c"
+)
+target_include_directories(test_oil_alarm PRIVATE "${COMP}/dash_can/include")
+target_compile_options(test_oil_alarm PRIVATE -Wall -Wextra)
+add_test(NAME oil_alarm COMMAND test_oil_alarm)

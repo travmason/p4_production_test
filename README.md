@@ -16,7 +16,7 @@ history.
   top-left corner of every screen marks simulated data and a silent ECU.
 - ECU data is rusEFI's native "verbose" CAN broadcast. Not yet tried against a
   real ECU.
-- Lights, indicators and two warning switches are read from optocoupler inputs.
+- Lights, indicators and the handbrake switch are read from optocoupler inputs.
   Not yet tried on hardware.
 - Odometer and outside temperature have no real source yet.
 - The clock is seeded from the build time at every boot, so it is wrong after a
@@ -103,7 +103,7 @@ work with the ECU, the CAN bus or the GPS node down. All on the EXT1 header:
 | Headlights           | 19   | 13       | Green headlight lamp                  |
 | High beam            | 33   | 16       | Headlight lamp in blue                |
 | Handbrake / brake warning | 46 | 18     | Red brake lamp                        |
-| Oil pressure switch  | 47   | 19       | Pressure gauge red, plus warning lamp |
+| spare                | 47   | 19       | -                                     |
 | spare                | 48   | 20       | -                                     |
 
 Use one optocoupler channel per circuit (PC817 or similar; a ready-made
@@ -119,7 +119,7 @@ Use one optocoupler channel per circuit (PC817 or similar; a ready-made
 
 - **Lamp feeds that go to +12 V when on** (indicators, headlights, high beam):
   as drawn. Take the feed from the lamp side of the flasher or switch.
-- **Switches that connect to ground** (oil pressure, handbrake): anode to
+- **Switches that connect to ground** (handbrake): anode to
   ignition-switched +12 V through the 1 k resistor, cathode to the switch wire.
 - The resistor is 1 kOhm, 0.5 W. Leave it out if the board already has one.
 - Nothing on the car side connects to the dash board; only the optocoupler
@@ -182,6 +182,13 @@ Taken from the ECU: RPM, vehicle speed, coolant temperature, oil temperature
 and pressure, manifold pressure (shown as boost against a standard atmosphere),
 fuel level, gear, check-engine, and a charge warning when the engine is turning
 below 12.0 V. The trip meter shows the ECU's distance since power-up.
+
+**Low oil pressure** is judged from the ECU's oil pressure and RPM. With the
+engine running (500 rpm or more) the pressure gauge turns red and the warning
+lamp lights when pressure stays below 10 psi, or below 25 psi at 3000 rpm and
+above, for half a second. It clears 4 psi above the limit. The first two
+seconds after a start are ignored. The limits are in
+`components/dash_can/include/dash_oil_alarm.h`; set them for the engine.
 
 If the ECU stops sending for one second, what it supplied drops to zero and the
 label reads NO ECU, rather than the last values staying frozen. Speed and

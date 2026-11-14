@@ -2,6 +2,7 @@
 
 #include <inttypes.h>
 
+#include "dash_oil_alarm.h"
 #include "dash_rusefi.h"
 #include "dash_signals.h"
 #include "dash_source.h"
@@ -20,6 +21,7 @@ static volatile uint32_t s_rx_count;
 static dash_rusefi_t  s_ecu;
 static TickType_t     s_ecu_last_rx;
 static volatile bool  s_ecu_online;
+static dash_oil_alarm_t s_oil_alarm;
 
 /*
  * Speed and distance are not the ECU's alone. The GPS node puts them on the
@@ -111,6 +113,14 @@ static void apply_ecu(const dash_rusefi_t *e)
         }
         dash_signals_set_telltale(DASH_TT_CHECK_ENGINE, e->check_engine);
     }
+    /* Low oil pressure, judged here from the ECU's sensor: the gauge goes red
+       and the warning lamp lights. See dash_oil_alarm.h for the limits. */
+    if ((e->has & DASH_RUSEFI_HAS_OIL_PRESS) && (e->has & DASH_RUSEFI_HAS_RPM)) {
+        const bool low = dash_oil_alarm_step(&s_oil_alarm, e->rpm,
+                                             dash_rusefi_kpa_to_psi(e->oil_press_kpa),
+                                             (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS));
+        dash_signals_set_telltale(DASH_TT_OIL, low);
+    }
     if ((e->has & DASH_RUSEFI_HAS_BATTERY) && (e->has & DASH_RUSEFI_HAS_RPM)) {
         if (e->rpm < BATT_WARN_MIN_RPM || e->battery_v >= BATT_WARN_OFF_V) {
             dash_signals_set_telltale(DASH_TT_BATTERY, false);
@@ -127,6 +137,7 @@ static void ecu_lost(void)
 {
     s_ecu_online = false;
     s_ecu = (dash_rusefi_t) {0};
+    s_oil_alarm = (dash_oil_alarm_t) {0};
     ESP_LOGW(TAG, "ECU silent for %d ms", ECU_TIMEOUT_MS);
 
     if (!dash_source_live_writes_allowed()) {
@@ -146,7 +157,7 @@ static void ecu_lost(void)
     dash_signals_set_oil_pressure_psi(0.0f);
     dash_signals_set_turbo_psi(0.0f);
     dash_signals_set_gear(0);
-    dash_signals_set_telltale(DASH_TT_CHECK_ENGINE | DASH_TT_BATTERY, false);
+    dash_signals_set_telltale(DASH_TT_CHECK_ENGINE | DASH_TT_BATTERY | DASH_TT_OIL, false);
 }
 
 static void handle_ecu_frame(const twai_message_t *msg)

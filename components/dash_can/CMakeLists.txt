@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "src/dash_can.c" "src/dash_rusefi.c"
+    SRCS "src/dash_can.c" "src/dash_rusefi.c" "src/dash_oil_alarm.c"
     INCLUDE_DIRS "include"
     # driver/twai.h is the legacy TWAI driver, which lives in "driver".
     REQUIRES dash_ui dash_signals dash_source driver

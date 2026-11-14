@@ -1,10 +1,19 @@
 /*
  * dash_can - CAN bus receive.
  *
- * Today this listens for screen-selection commands from the rotary controller.
- * It is also the intended home for real vehicle signal decoding: frames arrive
- * here, get decoded, and are pushed into dash_signals, at which point
- * dash_source_sim can be switched off and nothing in the UI needs to change.
+ * Two things arrive here:
+ *
+ *   - the rusEFI ECU's native "verbose" broadcast, decoded by dash_rusefi and
+ *     pushed into dash_signals (see dash_rusefi.h for the ECU settings);
+ *   - screen-selection commands from the rotary controller.
+ *
+ * The bus is small and private - ECU, dash, and later the GPS node - so the
+ * dash runs in normal mode and acknowledges frames. Listen-only is for tapping
+ * a bus that already has two acknowledging nodes.
+ *
+ * If the ECU stops sending for a second, everything it supplied is cleared to
+ * zero and the general warning lamp is lit, rather than leaving the last
+ * values frozen on the gauges.
  *
  * HARDWARE NOTE
  * -------------
@@ -46,6 +55,7 @@ typedef struct {
     int      rx_gpio;
     uint32_t bitrate_bps;    /*!< 125000, 250000, 500000 or 1000000 */
     uint32_t screen_cmd_id;  /*!< CAN ID carrying screen commands */
+    uint32_t ecu_base_id;    /*!< first of the twelve rusEFI verbose frames */
     bool     listen_only;    /*!< true = never ACK or transmit; safe to tap a
                                   live vehicle bus without disturbing it */
 } dash_can_cfg_t;
@@ -55,6 +65,7 @@ typedef struct {
         .rx_gpio       = DASH_CAN_DEFAULT_RX_GPIO,   \
         .bitrate_bps   = 500000,                     \
         .screen_cmd_id = 0x600,                      \
+        .ecu_base_id   = 0x200,                      \
         .listen_only   = false,                      \
     }
 
@@ -65,6 +76,9 @@ typedef struct {
  * driver still installs; it simply never sees a frame.
  */
 esp_err_t dash_can_start(const dash_can_cfg_t *cfg);
+
+/** True while the ECU's broadcast is arriving. Safe from any task. */
+bool dash_can_ecu_online(void);
 
 /** Frames seen since start, for checking the bus is alive. */
 uint32_t dash_can_rx_count(void);

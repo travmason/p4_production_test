@@ -209,9 +209,32 @@ void app_main(void)
              lv_display_get_horizontal_resolution(disp),
              lv_display_get_vertical_resolution(disp));
 
+    /*
+     * Hand over from the simulator to the ECU the first time the ECU is heard.
+     * One-way for now: once real data has been shown, made-up data must not
+     * come back by itself. A proper source switch replaces this.
+     */
+    bool sim_running = true;
+    uint32_t ticks = 0;
+
     /* Periodic health report; the UI refreshes itself on an LVGL timer. */
     while (true) {
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(100));
+        if (sim_running && dash_can_ecu_online()) {
+            dash_source_sim_stop();
+            sim_running = false;
+            /* Let its last frame land, then wipe what it left behind - lamps,
+               odometer, outside temperature - which the ECU does not supply
+               and so would never overwrite. The ECU refills its own values
+               within one broadcast period. */
+            vTaskDelay(pdMS_TO_TICKS(150));
+            const dash_signals_t blank = {0};
+            dash_signals_publish(&blank);
+            ESP_LOGI(TAG, "ECU data arriving; simulator stopped");
+        }
+        if (++ticks % 100 != 0) {
+            continue;
+        }
         ESP_LOGI(TAG, "internal free: %u KB, largest block: %u KB",
                  (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
                  (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024));

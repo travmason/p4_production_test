@@ -11,10 +11,12 @@ history.
 
 ## Status
 
-- The cluster shows **simulated data only**. `dash_source_sim` generates a
-  drive cycle, including indicators and warning lamps. No vehicle signals are
-  decoded from CAN yet.
-- CAN is used for screen-selection commands only.
+- The cluster starts on **simulated data** (`dash_source_sim`, a made-up drive
+  cycle) and switches to the ECU the first time ECU frames arrive. It does not
+  switch back by itself.
+- ECU data is rusEFI's native "verbose" CAN broadcast. Not yet tried against a
+  real ECU.
+- Lights, indicators, odometer and outside temperature have no real source yet.
 - The clock is seeded from the build time at every boot, so it is wrong after a
   power cycle.
 - Touch (USB HID from the panel) is present in the code but parked.
@@ -61,7 +63,7 @@ underruns, PSRAM bandwidth and frame rate can only be judged on the hardware.
 | `main/main.c`                | Start-up: display, UI, touch, buttons, CAN, simulator        |
 | `components/dash_signals`    | The vehicle signal model; the seam between data and pixels   |
 | `components/dash_source_sim` | Synthetic vehicle feeding the model                          |
-| `components/dash_can`        | CAN receive: screen commands today, signal decoding later    |
+| `components/dash_can`        | CAN receive: rusEFI ECU data and screen commands              |
 | `components/dash_ui`         | The three LVGL screens: cluster, track, data                 |
 | `components/dash_assets`     | Artwork, embedded as binary, plus measured geometry          |
 | `components/dash_touch`      | USB HID digitizer as an LVGL pointer                         |
@@ -92,10 +94,37 @@ The on-board BOOT button (GPIO35) also changes screen.
 - CAN: a frame on ID `0x600` at 500 kbit/s, command in byte 0:
   `0x01` next, `0x02` previous, `0x10 + n` selects screen `n`.
 
-The CAN defaults are in `components/dash_can/include/dash_can.h`. Note that
-`listen_only` defaults to `false`, so the board acknowledges frames. That is
-right for a private bus with a single controller on it; set it to `true` before
-tapping a vehicle's own bus.
+## ECU data
+
+The dash reads rusEFI's native "verbose" broadcast: twelve frames on IDs
+`0x200`-`0x20B`. Set these in TunerStudio's CAN settings:
+
+| Setting                      | Value        |
+|------------------------------|--------------|
+| CAN baud rate                | 500 kbit/s   |
+| rusEFI (verbose) CAN broadcast | enabled    |
+| Verbose CAN base address     | `0x200` (512) |
+| ID length                    | 11 bit       |
+
+A Haltech (or other) dash broadcast can stay enabled alongside it, but Haltech
+forces the bus to 1 Mbit/s, so turn it off to run at 500 kbit/s.
+
+Taken from the ECU: RPM, vehicle speed, coolant temperature, oil temperature
+and pressure, manifold pressure (shown as boost against a standard atmosphere),
+fuel level, gear, check-engine, and a charge warning when the engine is turning
+below 12.0 V. The trip meter shows the ECU's distance since power-up.
+
+If the ECU stops sending for one second, everything it supplied drops to zero
+and the general warning lamp lights, rather than the last values staying frozen.
+
+The decoder is `components/dash_can/src/dash_rusefi.c`. It is tested on the Mac
+against the layout in rusEFI's `rusEFI_CAN_verbose.dbc`:
+
+    ctest --test-dir sim/build
+
+The CAN defaults are in `components/dash_can/include/dash_can.h`. The dash runs
+in normal mode, so it acknowledges frames, which a bus of just ECU and dash
+needs. `listen_only` is for tapping a bus that already has two other nodes.
 
 ## Changing the artwork
 

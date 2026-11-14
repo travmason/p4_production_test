@@ -2,6 +2,8 @@
 
 #include <inttypes.h>
 
+#include "dash_rusefi.h"
+#include "dash_signals.h"
 #include "dash_ui.h"
 #include "driver/twai.h"
 #include "esp_log.h"
@@ -12,6 +14,21 @@ static const char *TAG = "dash_can";
 
 static dash_can_cfg_t s_cfg;
 static volatile uint32_t s_rx_count;
+
+/* ECU link. Written by the CAN task only; s_ecu_online is read elsewhere. */
+static dash_rusefi_t  s_ecu;
+static TickType_t     s_ecu_last_rx;
+static volatile bool  s_ecu_online;
+
+/* No verbose frame for this long means the ECU is off or unplugged. The ECU
+   sends the whole set many times a second, so this is generous. */
+#define ECU_TIMEOUT_MS        1000
+
+/* Charge warning: engine turning but the system voltage is at battery level.
+   Two thresholds so it does not flicker around one. */
+#define BATT_WARN_ON_V        12.0f
+#define BATT_WARN_OFF_V       12.6f
+#define BATT_WARN_MIN_RPM     500.0f
 
 static bool timing_for(uint32_t bps, twai_timing_config_t *out)
 {
@@ -42,6 +59,82 @@ static void handle_screen_cmd(const twai_message_t *msg)
     }
 }
 
+/* Push what the ECU last said into the signal model, converting to the units
+   the dash shows. Only fields the ECU has actually sent are touched. */
+static void apply_ecu(const dash_rusefi_t *e)
+{
+    if (e->has & DASH_RUSEFI_HAS_RPM) {
+        dash_signals_set_rpm(e->rpm);
+    }
+    if (e->has & DASH_RUSEFI_HAS_SPEED) {
+        dash_signals_set_speed_kmh(e->speed_kmh);
+    }
+    if (e->has & DASH_RUSEFI_HAS_COOLANT) {
+        dash_signals_set_coolant_temp_c(e->coolant_c);
+    }
+    if (e->has & DASH_RUSEFI_HAS_FUEL_LEVEL) {
+        dash_signals_set_fuel_level_pct(e->fuel_level_pct);
+    }
+    if (e->has & DASH_RUSEFI_HAS_OIL_TEMP) {
+        dash_signals_set_oil_temp_c(e->oil_temp_c);
+    }
+    if (e->has & DASH_RUSEFI_HAS_OIL_PRESS) {
+        dash_signals_set_oil_pressure_psi(dash_rusefi_kpa_to_psi(e->oil_press_kpa));
+    }
+    if (e->has & DASH_RUSEFI_HAS_MAP) {
+        dash_signals_set_turbo_psi(dash_rusefi_boost_psi(e->map_kpa));
+    }
+    if (e->has & DASH_RUSEFI_HAS_STATUS) {
+        dash_signals_set_gear(e->gear);
+        /* Distance since the ECU powered up. It stands in for the trip meter
+           until the GPS node provides a kept odometer. */
+        dash_signals_set_trip_km(e->distance_km);
+        dash_signals_set_telltale(DASH_TT_CHECK_ENGINE, e->check_engine);
+    }
+    if ((e->has & DASH_RUSEFI_HAS_BATTERY) && (e->has & DASH_RUSEFI_HAS_RPM)) {
+        if (e->rpm < BATT_WARN_MIN_RPM || e->battery_v >= BATT_WARN_OFF_V) {
+            dash_signals_set_telltale(DASH_TT_BATTERY, false);
+        } else if (e->battery_v < BATT_WARN_ON_V) {
+            dash_signals_set_telltale(DASH_TT_BATTERY, true);
+        }
+    }
+}
+
+/* The ECU went quiet. A frozen needle is worse than an empty one, so drop
+   everything it was supplying to zero and light the general warning lamp. */
+static void ecu_lost(void)
+{
+    s_ecu_online = false;
+    s_ecu = (dash_rusefi_t) {0};
+
+    dash_signals_set_rpm(0.0f);
+    dash_signals_set_speed_kmh(0.0f);
+    dash_signals_set_coolant_temp_c(0.0f);
+    dash_signals_set_fuel_level_pct(0.0f);
+    dash_signals_set_oil_temp_c(0.0f);
+    dash_signals_set_oil_pressure_psi(0.0f);
+    dash_signals_set_turbo_psi(0.0f);
+    dash_signals_set_gear(0);
+    dash_signals_set_telltale(DASH_TT_CHECK_ENGINE | DASH_TT_BATTERY, false);
+    dash_signals_set_telltale(DASH_TT_WARNING, true);
+    ESP_LOGW(TAG, "ECU silent for %d ms; gauges cleared", ECU_TIMEOUT_MS);
+}
+
+static void handle_ecu_frame(const twai_message_t *msg)
+{
+    if (!dash_rusefi_decode(s_cfg.ecu_base_id, msg->identifier, msg->data,
+                            msg->data_length_code, &s_ecu)) {
+        return;
+    }
+    s_ecu_last_rx = xTaskGetTickCount();
+    if (!s_ecu_online) {
+        s_ecu_online = true;
+        dash_signals_set_telltale(DASH_TT_WARNING, false);
+        ESP_LOGI(TAG, "ECU online");
+    }
+    apply_ecu(&s_ecu);
+}
+
 /* Receive timeout while the bus is healthy. Finite rather than portMAX_DELAY so
    a bus-off still gets noticed. */
 #define RX_IDLE_TIMEOUT_MS  1000
@@ -55,15 +148,25 @@ static void can_task(void *arg)
     TickType_t rx_timeout = pdMS_TO_TICKS(RX_IDLE_TIMEOUT_MS);
 
     while (true) {
+        /* Checked every pass, not only on a receive timeout: other nodes may
+           keep the bus busy after the ECU has gone. */
+        if (s_ecu_online &&
+            (xTaskGetTickCount() - s_ecu_last_rx) > pdMS_TO_TICKS(ECU_TIMEOUT_MS)) {
+            ecu_lost();
+        }
+
         twai_message_t msg;
         const esp_err_t err = twai_receive(&msg, rx_timeout);
         if (err == ESP_OK) {
             s_rx_count++;
-            if (msg.identifier == s_cfg.screen_cmd_id && !msg.rtr) {
-                handle_screen_cmd(&msg);
+            if (msg.rtr || msg.extd) {
+                continue;
             }
-            /* Vehicle signal decoding belongs here: match msg.identifier
-               against the frame map and push values into dash_signals. */
+            if (msg.identifier == s_cfg.screen_cmd_id) {
+                handle_screen_cmd(&msg);
+            } else {
+                handle_ecu_frame(&msg);
+            }
             continue;
         }
         if (err != ESP_ERR_TIMEOUT) {
@@ -152,11 +255,20 @@ esp_err_t dash_can_start(const dash_can_cfg_t *cfg)
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "CAN up: TX=GPIO%d RX=GPIO%d %" PRIu32 " bit/s%s, screen commands on ID 0x%03" PRIx32,
+    ESP_LOGI(TAG, "CAN up: TX=GPIO%d RX=GPIO%d %" PRIu32 " bit/s%s",
              s_cfg.tx_gpio, s_cfg.rx_gpio, s_cfg.bitrate_bps,
-             s_cfg.listen_only ? " (listen-only)" : "", s_cfg.screen_cmd_id);
+             s_cfg.listen_only ? " (listen-only)" : "");
+    ESP_LOGI(TAG, "rusEFI verbose frames at 0x%03" PRIx32 "-0x%03" PRIx32
+             ", screen commands on 0x%03" PRIx32,
+             s_cfg.ecu_base_id, s_cfg.ecu_base_id + DASH_RUSEFI_NUM_FRAMES - 1,
+             s_cfg.screen_cmd_id);
     ESP_LOGI(TAG, "an external 3.3V transceiver is required on these pins");
     return ESP_OK;
+}
+
+bool dash_can_ecu_online(void)
+{
+    return s_ecu_online;
 }
 
 uint32_t dash_can_rx_count(void)

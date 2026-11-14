@@ -137,11 +137,87 @@ static void apply_requests(void)
     }
 }
 
+/*
+ * Source chip. Lives on the top layer so it sits over every screen and rides
+ * through screen-change animations without being rebuilt.
+ */
+#define CHIP_X       10
+#define CHIP_BOTTOM  8
+
+static atomic_int s_chip_req = DASH_UI_CHIP_SIM;
+static int        s_chip_shown = -1;
+static lv_obj_t  *s_chip;
+static void     (*s_chip_cb)(void);
+
+static void chip_event_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_chip_cb != NULL) {
+        s_chip_cb();
+    }
+}
+
+static void chip_create(void)
+{
+    s_chip = lv_label_create(lv_layer_top());
+    lv_obj_set_style_text_font(s_chip, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_pad_hor(s_chip, 12, 0);
+    lv_obj_set_style_pad_ver(s_chip, 4, 0);
+    lv_obj_set_style_radius(s_chip, 6, 0);
+    lv_obj_set_style_border_width(s_chip, 2, 0);
+    lv_obj_align(s_chip, LV_ALIGN_BOTTOM_LEFT, CHIP_X, -CHIP_BOTTOM);
+    /* A fingertip is far bigger than the label. */
+    lv_obj_set_ext_click_area(s_chip, 28);
+    lv_obj_add_flag(s_chip, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(s_chip, chip_event_cb, LV_EVENT_LONG_PRESSED, NULL);
+}
+
+static void chip_refresh(void)
+{
+    const int want = atomic_load(&s_chip_req);
+    if (want == s_chip_shown || s_chip == NULL) {
+        return;
+    }
+    s_chip_shown = want;
+
+    const char *text;
+    lv_color_t  fg, bg, border;
+    lv_opa_t    bg_opa = LV_OPA_COVER;
+
+    switch (want) {
+    case DASH_UI_CHIP_LIVE:
+        text = "LIVE";
+        fg = COL_DIM;
+        bg = lv_color_black();
+        border = COL_DIM;
+        bg_opa = LV_OPA_TRANSP;
+        break;
+    case DASH_UI_CHIP_NO_ECU:
+        text = "NO ECU";
+        fg = COL_WHITE;
+        bg = lv_color_hex(0xC00000);
+        border = bg;
+        break;
+    default:
+        text = "SIM";
+        fg = lv_color_black();
+        bg = COL_AMBER;
+        border = bg;
+        break;
+    }
+    lv_label_set_text(s_chip, text);
+    lv_obj_set_style_text_color(s_chip, fg, 0);
+    lv_obj_set_style_bg_color(s_chip, bg, 0);
+    lv_obj_set_style_bg_opa(s_chip, bg_opa, 0);
+    lv_obj_set_style_border_color(s_chip, border, 0);
+}
+
 static void refresh_cb(lv_timer_t *timer)
 {
     (void)timer;
 
     apply_requests();
+    chip_refresh();
 
     dash_signals_t s;
     dash_signals_get(&s);
@@ -161,6 +237,8 @@ esp_err_t dash_ui_create(lv_display_t *disp)
 
     s_active = 0;
     lv_screen_load(first);
+    chip_create();
+    chip_refresh();
 
     lv_timer_create(refresh_cb, 50, NULL);
 
@@ -184,6 +262,16 @@ void dash_ui_set_screen(int index)
         return;
     }
     atomic_store(&s_req_abs, index);
+}
+
+void dash_ui_set_source_chip(dash_ui_source_chip_t state)
+{
+    atomic_store(&s_chip_req, (int)state);
+}
+
+void dash_ui_set_source_chip_cb(void (*on_hold)(void))
+{
+    s_chip_cb = on_hold;
 }
 
 int dash_ui_screen_count(void)

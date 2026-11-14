@@ -4,7 +4,7 @@
  * Car instrument cluster. Three pieces, deliberately kept apart:
  *
  *   dash_signals     the vehicle signal model - the seam between data and pixels
- *   dash_source_sim  a synthetic vehicle feeding that model (swap for CAN later)
+ *   dash_source      picks who feeds it: the simulator or the ECU over CAN
  *   dash_ui          the LVGL cluster, which only ever reads dash_signals
  *
  * The original Olimex production test is preserved in production_test_main.c.ref
@@ -20,7 +20,7 @@
 #include "driver/gpio.h"
 #include "dash_can.h"
 #include "dash_signals.h"
-#include "dash_source_sim.h"
+#include "dash_source.h"
 #include "dash_touch.h"
 #include "dash_ui.h"
 #include "esp_heap_caps.h"
@@ -90,6 +90,8 @@ static void seed_clock_from_build_time(void)
 #define EXT_BTN_GPIO   GPIO_NUM_14
 
 #define BTN_DEBOUNCE_MS  40
+/* Held this long, a button changes the data source instead of the screen. */
+#define BTN_HOLD_MS      1500
 
 static void button_task(void *arg)
 {
@@ -107,18 +109,31 @@ static void button_task(void *arg)
     ESP_LOGI(TAG, "screen buttons: BOOT (GPIO%d) and GPIO%d (EXT1 pin 8)",
              BOOT_BTN_GPIO, EXT_BTN_GPIO);
 
-    bool prev_boot = false, prev_ext = false;
+    /*
+     * The two buttons act as one. A short press changes screen, on release, so
+     * that a long press is not also a screen change. Holding for BTN_HOLD_MS
+     * steps the data source: auto -> simulated -> live. Both calls only post a
+     * request, so no display lock is needed here.
+     */
+    bool prev = false, held = false;
+    uint32_t down_ms = 0;
     while (true) {
-        const bool boot = gpio_get_level(BOOT_BTN_GPIO) == 0;   /* active low */
-        const bool ext  = gpio_get_level(EXT_BTN_GPIO) == 0;
+        const bool down = gpio_get_level(BOOT_BTN_GPIO) == 0 ||   /* active low */
+                          gpio_get_level(EXT_BTN_GPIO) == 0;
 
-        /* Either button advances, on the press edge only. This only posts a
-           request; the LVGL task makes the change, so no display lock here. */
-        if ((boot && !prev_boot) || (ext && !prev_ext)) {
-            dash_ui_next_screen();
+        if (down) {
+            down_ms = prev ? down_ms + BTN_DEBOUNCE_MS : 0;
+            if (!held && down_ms >= BTN_HOLD_MS) {
+                held = true;
+                dash_source_cycle_mode();
+            }
+        } else if (prev) {
+            if (!held) {
+                dash_ui_next_screen();
+            }
+            held = false;
         }
-        prev_boot = boot;
-        prev_ext  = ext;
+        prev = down;
         vTaskDelay(pdMS_TO_TICKS(BTN_DEBOUNCE_MS));
     }
 }
@@ -183,6 +198,7 @@ void app_main(void)
     if (bsp_display_lock(portMAX_DELAY)) {
         lv_display_set_default(disp);
         dash_ui_create(disp);
+        dash_ui_set_source_chip_cb(dash_source_cycle_mode);
 
         /* Touch is optional: the cluster runs fine without a digitizer
            attached, it just cannot be swiped. Started under the lock because
@@ -203,38 +219,16 @@ void app_main(void)
         ESP_LOGW(TAG, "CAN unavailable; screens still change on the buttons");
     }
 
-    ESP_ERROR_CHECK(dash_source_sim_start());
+    /* Simulator or ECU, per the saved mode. Owns starting the simulator. */
+    ESP_ERROR_CHECK(dash_source_start(dash_can_ecu_online));
 
     ESP_LOGI(TAG, "cluster running at %" LV_PRId32 "x%" LV_PRId32,
              lv_display_get_horizontal_resolution(disp),
              lv_display_get_vertical_resolution(disp));
 
-    /*
-     * Hand over from the simulator to the ECU the first time the ECU is heard.
-     * One-way for now: once real data has been shown, made-up data must not
-     * come back by itself. A proper source switch replaces this.
-     */
-    bool sim_running = true;
-    uint32_t ticks = 0;
-
     /* Periodic health report; the UI refreshes itself on an LVGL timer. */
     while (true) {
-        vTaskDelay(pdMS_TO_TICKS(100));
-        if (sim_running && dash_can_ecu_online()) {
-            dash_source_sim_stop();
-            sim_running = false;
-            /* Let its last frame land, then wipe what it left behind - lamps,
-               odometer, outside temperature - which the ECU does not supply
-               and so would never overwrite. The ECU refills its own values
-               within one broadcast period. */
-            vTaskDelay(pdMS_TO_TICKS(150));
-            const dash_signals_t blank = {0};
-            dash_signals_publish(&blank);
-            ESP_LOGI(TAG, "ECU data arriving; simulator stopped");
-        }
-        if (++ticks % 100 != 0) {
-            continue;
-        }
+        vTaskDelay(pdMS_TO_TICKS(10000));
         ESP_LOGI(TAG, "internal free: %u KB, largest block: %u KB",
                  (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
                  (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024));

@@ -12,8 +12,11 @@
  * a bus that already has two acknowledging nodes.
  *
  * If the ECU stops sending for a second, everything it supplied is cleared to
- * zero and the general warning lamp is lit, rather than leaving the last
- * values frozen on the gauges.
+ * zero and the source chip reads NO ECU, rather than leaving the last values
+ * frozen on the gauges.
+ *
+ * Whether decoded values reach the gauges at all is up to dash_source: while
+ * the simulator is selected they are decoded and held, not shown.
  *
  * HARDWARE NOTE
  * -------------
@@ -48,6 +51,8 @@ typedef enum {
     DASH_CAN_SCREEN_PREV = 0x02,
     /** 0x10 + n selects screen n outright, so a rotary detent can map 1:1. */
     DASH_CAN_SCREEN_ABS_BASE = 0x10,
+    /** 0x20 + m selects data source m: 0 auto, 1 simulated, 2 live. */
+    DASH_CAN_SOURCE_BASE = 0x20,
 } dash_can_screen_cmd_t;
 
 typedef struct {

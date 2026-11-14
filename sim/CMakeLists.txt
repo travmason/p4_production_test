@@ -69,6 +69,7 @@ add_executable(dash_sim
     "${COMP}/dash_assets/src/dash_assets.c"
     "${COMP}/dash_signals/src/dash_signals.c"
     "${COMP}/dash_source_sim/src/dash_source_sim.c"
+    "${COMP}/dash_source/src/dash_source.c"
     "${COMP}/dash_ui/src/dash_ui.c"
     "${COMP}/dash_ui/src/dash_ui_common.c"
     "${COMP}/dash_ui/src/dash_ui_cluster.c"
@@ -82,6 +83,8 @@ target_include_directories(dash_sim PRIVATE
     "${COMP}/dash_assets/include"
     "${COMP}/dash_signals/include"
     "${COMP}/dash_source_sim/include"
+    "${COMP}/dash_source/include"
+    "${COMP}/dash_source/src"
     "${COMP}/dash_ui/include"
     "${COMP}/dash_ui/src"
 )

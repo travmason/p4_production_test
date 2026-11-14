@@ -200,7 +200,9 @@ static void sim_task(void *arg)
 esp_err_t dash_source_sim_start(void)
 {
     if (s_task != NULL) {
-        return ESP_OK;
+        /* Still running, or told to stop and not gone yet. The second case
+           cannot be restarted until the old task has left. */
+        return s_run ? ESP_OK : ESP_ERR_INVALID_STATE;
     }
     s_run = true;
     if (xTaskCreate(sim_task, "dash_sim", 4096, NULL, 4, &s_task) != pdPASS) {

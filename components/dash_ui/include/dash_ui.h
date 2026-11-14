@@ -41,6 +41,27 @@ void dash_ui_set_screen(int index);
 /** How many screens exist, for validating an external selector. */
 int dash_ui_screen_count(void);
 
+/*
+ * The source chip: a small label in the bottom-left corner of every screen
+ * saying where the numbers come from. It is always there, so simulated data
+ * can never be mistaken for the car's.
+ */
+typedef enum {
+    DASH_UI_CHIP_SIM = 0,   /*!< amber "SIM" */
+    DASH_UI_CHIP_LIVE,      /*!< dim "LIVE" */
+    DASH_UI_CHIP_NO_ECU,    /*!< red "NO ECU" */
+} dash_ui_source_chip_t;
+
+/** Set what the chip shows. Safe from any task; do not hold the LVGL lock. */
+void dash_ui_set_source_chip(dash_ui_source_chip_t state);
+
+/**
+ * Called, in the LVGL task, when the chip is pressed and held. A hold rather
+ * than a tap so that a brushed finger changes nothing. The callback must not
+ * block; posting a request to another task is the intended use.
+ */
+void dash_ui_set_source_chip_cb(void (*on_hold)(void));
+
 #ifdef __cplusplus
 }
 #endif

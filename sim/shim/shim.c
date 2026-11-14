@@ -82,3 +82,26 @@ BaseType_t xSemaphoreGive(SemaphoreHandle_t m)
 {
     return pthread_mutex_unlock(&m->m) == 0 ? pdTRUE : pdFALSE;
 }
+
+/*
+ * dash_source's saved mode. The firmware keeps it in NVS; here it lasts only
+ * as long as the process, and --source sets what "was saved".
+ */
+#include "dash_source_store.h"
+
+static int s_saved_source = -1;
+
+void sim_set_saved_source(int value)
+{
+    s_saved_source = value;
+}
+
+int dash_source_store_load(int fallback)
+{
+    return s_saved_source >= 0 ? s_saved_source : fallback;
+}
+
+void dash_source_store_save(int value)
+{
+    s_saved_source = value;
+}

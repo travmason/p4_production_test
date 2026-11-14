@@ -11,9 +11,9 @@ history.
 
 ## Status
 
-- The cluster starts on **simulated data** (`dash_source_sim`, a made-up drive
-  cycle) and switches to the ECU the first time ECU frames arrive. It does not
-  switch back by itself.
+- The gauges show either **simulated data** (`dash_source_sim`, a made-up drive
+  cycle) or the ECU's, chosen by the data source mode below. A chip in the
+  bottom-left corner of every screen always says which.
 - ECU data is rusEFI's native "verbose" CAN broadcast. Not yet tried against a
   real ECU.
 - Lights, indicators, odometer and outside temperature have no real source yet.
@@ -69,6 +69,7 @@ underruns, PSRAM bandwidth and frame rate can only be judged on the hardware.
 | `components/dash_touch`      | USB HID digitizer as an LVGL pointer                         |
 | `components/esp-bsp`         | Vendored Espressif BSP, with 1600x720 HDMI modes added       |
 | `tools/make_assets.py`       | Turns `assets/dash_bg_source.png` into the embedded assets   |
+| `components/dash_source`     | Chooses simulator or ECU; keeps the mode in flash            |
 | `sim/`                       | Mac simulator: SDL window plus host stand-ins for ESP-IDF    |
 
 ## Wiring
@@ -89,10 +90,30 @@ The on-board BOOT button (GPIO35) also changes screen.
 
 ## Changing screen
 
-- BOOT button or the GPIO14 button: next screen.
+- BOOT button or the GPIO14 button, pressed briefly: next screen.
 - Swipe up / down, when touch is in use.
 - CAN: a frame on ID `0x600` at 500 kbit/s, command in byte 0:
   `0x01` next, `0x02` previous, `0x10 + n` selects screen `n`.
+
+## Data source
+
+A chip in the bottom-left corner shows where the numbers come from: amber
+**SIM**, dim **LIVE**, or red **NO ECU** (live selected, ECU silent).
+
+| Mode | Behaviour |
+|------|-----------|
+| auto (default) | Simulated until the ECU is first heard, then live until power-off. It never goes back to simulated data by itself. |
+| simulated | Always simulated, even with the ECU connected. |
+| live | Never simulated. With no ECU the gauges read zero and the chip says NO ECU. **Leave the car in this mode.** |
+
+The mode is kept in flash. To step through auto, simulated, live:
+
+- press and hold the chip on the touch screen;
+- hold either screen button for 1.5 seconds;
+- or send CAN ID `0x600` with byte 0 = `0x20` auto, `0x21` simulated, `0x22` live.
+
+In the Mac simulator, `M` steps the mode and `E` connects a pretend ECU;
+`--source live` and `--ecu` set them from the command line.
 
 ## ECU data
 
@@ -115,7 +136,7 @@ fuel level, gear, check-engine, and a charge warning when the engine is turning
 below 12.0 V. The trip meter shows the ECU's distance since power-up.
 
 If the ECU stops sending for one second, everything it supplied drops to zero
-and the general warning lamp lights, rather than the last values staying frozen.
+and the chip reads NO ECU, rather than the last values staying frozen.
 
 The decoder is `components/dash_can/src/dash_rusefi.c`. It is tested on the Mac
 against the layout in rusEFI's `rusEFI_CAN_verbose.dbc`:

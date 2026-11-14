@@ -4,6 +4,7 @@
 
 #include "dash_rusefi.h"
 #include "dash_signals.h"
+#include "dash_source.h"
 #include "dash_ui.h"
 #include "driver/twai.h"
 #include "esp_log.h"
@@ -50,6 +51,10 @@ static void handle_screen_cmd(const twai_message_t *msg)
     }
     const uint8_t cmd = msg->data[0];
 
+    if (cmd >= DASH_CAN_SOURCE_BASE && cmd < DASH_CAN_SOURCE_BASE + DASH_SOURCE_NUM_MODES) {
+        dash_source_set_mode((dash_source_mode_t)(cmd - DASH_CAN_SOURCE_BASE));
+        return;
+    }
     if (cmd == DASH_CAN_SCREEN_NEXT) {
         dash_ui_next_screen();
     } else if (cmd == DASH_CAN_SCREEN_PREV) {
@@ -101,11 +106,17 @@ static void apply_ecu(const dash_rusefi_t *e)
 }
 
 /* The ECU went quiet. A frozen needle is worse than an empty one, so drop
-   everything it was supplying to zero and light the general warning lamp. */
+   everything it was supplying to zero. dash_source sees s_ecu_online go false
+   and has the UI say NO ECU. */
 static void ecu_lost(void)
 {
     s_ecu_online = false;
     s_ecu = (dash_rusefi_t) {0};
+    ESP_LOGW(TAG, "ECU silent for %d ms", ECU_TIMEOUT_MS);
+
+    if (!dash_source_live_writes_allowed()) {
+        return;   /* the simulator has the gauges */
+    }
 
     dash_signals_set_rpm(0.0f);
     dash_signals_set_speed_kmh(0.0f);
@@ -116,8 +127,6 @@ static void ecu_lost(void)
     dash_signals_set_turbo_psi(0.0f);
     dash_signals_set_gear(0);
     dash_signals_set_telltale(DASH_TT_CHECK_ENGINE | DASH_TT_BATTERY, false);
-    dash_signals_set_telltale(DASH_TT_WARNING, true);
-    ESP_LOGW(TAG, "ECU silent for %d ms; gauges cleared", ECU_TIMEOUT_MS);
 }
 
 static void handle_ecu_frame(const twai_message_t *msg)
@@ -129,10 +138,13 @@ static void handle_ecu_frame(const twai_message_t *msg)
     s_ecu_last_rx = xTaskGetTickCount();
     if (!s_ecu_online) {
         s_ecu_online = true;
-        dash_signals_set_telltale(DASH_TT_WARNING, false);
         ESP_LOGI(TAG, "ECU online");
     }
-    apply_ecu(&s_ecu);
+    /* Decoding carries on regardless, so the values are current the moment
+       the source is switched to live. */
+    if (dash_source_live_writes_allowed()) {
+        apply_ecu(&s_ecu);
+    }
 }
 
 /* Receive timeout while the bus is healthy. Finite rather than portMAX_DELAY so

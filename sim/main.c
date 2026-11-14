@@ -17,6 +17,8 @@
  *            --after 20               ... after this many seconds (default 5)
  *   dash_sim --source live            start in a data-source mode: auto, sim, live
  *   dash_sim --ecu                    pretend the ECU is on the bus from the start
+ *   dash_sim --lamps 0x20b            live mode with these telltale bits lit, to
+ *                                     see lamps the simulated drive never shows
  *
  * Keys: Space / Right / Down  next screen      1 2 3   pick a screen
  *       Left / Up             previous screen  Esc Q   quit
@@ -54,6 +56,7 @@ typedef struct {
     float       after_s;
     int         source;        /* dash_source_mode_t */
     bool        ecu;
+    long        lamps;         /* dash_telltale_t bits to force on, or -1 */
 } options_t;
 
 void sim_set_saved_source(int value);   /* shim/shim.c */
@@ -77,6 +80,7 @@ static void usage(const char *argv0)
             "  --after SECONDS     how long to run before the screenshot (default 5)\n"
             "  --source MODE       data source: auto (default), sim or live\n"
             "  --ecu               pretend the ECU is connected\n"
+            "  --lamps BITS        live mode with these lamps lit, e.g. 0x3ff for all\n"
             "\n"
             "keys: Space/Right/Down next, Left/Up previous, 1-3 select, Esc/Q quit\n"
             "      M step data source, E connect/disconnect the pretend ECU\n",
@@ -86,7 +90,7 @@ static void usage(const char *argv0)
 static bool parse_options(int argc, char **argv, options_t *o)
 {
     *o = (options_t) { .zoom = 0.0f, .screen = 0, .screenshot = NULL, .after_s = 5.0f,
-                       .source = DASH_SOURCE_AUTO, .ecu = false };
+                       .source = DASH_SOURCE_AUTO, .ecu = false, .lamps = -1 };
 
     for (int i = 1; i < argc; i++) {
         const bool has_value = i + 1 < argc;
@@ -109,6 +113,8 @@ static bool parse_options(int argc, char **argv, options_t *o)
             } else {
                 return false;
             }
+        } else if (strcmp(argv[i], "--lamps") == 0 && has_value) {
+            o->lamps = strtol(argv[++i], NULL, 0);
         } else if (strcmp(argv[i], "--ecu") == 0) {
             o->ecu = true;
         } else {
@@ -315,13 +321,19 @@ int main(int argc, char **argv)
 
     /* From here on this is the firmware's own start-up sequence. */
     s_fake_ecu = o.ecu;
-    sim_set_saved_source(o.source);
+    sim_set_saved_source(o.lamps >= 0 ? DASH_SOURCE_LIVE : o.source);
     if (dash_signals_init() != ESP_OK || dash_ui_create(disp) != ESP_OK ||
         dash_source_start(fake_ecu_online) != ESP_OK) {
         fprintf(stderr, "dashboard start-up failed\n");
         return 1;
     }
     dash_ui_set_source_chip_cb(dash_source_cycle_mode);
+    if (o.lamps >= 0) {
+        /* Stands in for dash_inputs: wait for the source manager's wipe on
+           entering live mode, then light the lamps. */
+        usleep(400000);
+        dash_signals_set_telltale((uint32_t)o.lamps, true);
+    }
     if (o.screen != 0) {
         dash_ui_set_screen(o.screen);
     }

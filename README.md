@@ -16,7 +16,9 @@ history.
   top-left corner of every screen marks simulated data and a silent ECU.
 - ECU data is rusEFI's native "verbose" CAN broadcast. Not yet tried against a
   real ECU.
-- Lights, indicators, odometer and outside temperature have no real source yet.
+- Lights, indicators and two warning switches are read from optocoupler inputs.
+  Not yet tried on hardware.
+- Odometer and outside temperature have no real source yet.
 - The clock is seeded from the build time at every boot, so it is wrong after a
   power cycle.
 - Touch (USB HID from the panel) is present in the code but parked.
@@ -70,6 +72,7 @@ underruns, PSRAM bandwidth and frame rate can only be judged on the hardware.
 | `components/esp-bsp`         | Vendored Espressif BSP, with 1600x720 HDMI modes added       |
 | `tools/make_assets.py`       | Turns `assets/dash_bg_source.png` into the embedded assets   |
 | `components/dash_source`     | Chooses simulator or ECU; keeps the mode in flash            |
+| `components/dash_inputs`     | Lamp circuits on GPIO, through optocouplers                  |
 | `sim/`                       | Mac simulator: SDL window plus host stand-ins for ESP-IDF    |
 
 ## Wiring
@@ -87,6 +90,49 @@ TJA1051T/3, MCP2562FD or similar) is required between these pins and the bus.
 Do not connect the GPIOs to CAN_H / CAN_L directly.
 
 The on-board BOOT button (GPIO35) also changes screen.
+
+## Lights and indicators
+
+The car's lamp circuits are read directly, one optocoupler per circuit, so they
+work with the ECU, the CAN bus or the GPS node down. All on the EXT1 header:
+
+| Circuit              | GPIO | EXT1 pin | Shown as                              |
+|----------------------|------|----------|---------------------------------------|
+| Left indicator       | 17   | 11       | Left arrow, blinking with the lamp    |
+| Right indicator      | 18   | 12       | Right arrow                           |
+| Headlights           | 19   | 13       | Green headlight lamp                  |
+| High beam            | 33   | 16       | Headlight lamp in blue                |
+| Handbrake / brake warning | 46 | 18     | Red brake lamp                        |
+| Oil pressure switch  | 47   | 19       | Red "OIL"                             |
+| spare                | 48   | 20       | -                                     |
+
+Use one optocoupler channel per circuit (PC817 or similar; a ready-made
+"12 V optocoupler isolation" board has the resistors fitted):
+
+    car side                              dash side
+
+    lamp feed (+12 V when on) --[1 k]--+       +---- GPIO
+                                     anode   collector
+                                      LED  >>  transistor
+                                    cathode  emitter
+    chassis ground --------------------+       +---- GND (EXT1 pin 3)
+
+- **Lamp feeds that go to +12 V when on** (indicators, headlights, high beam):
+  as drawn. Take the feed from the lamp side of the flasher or switch.
+- **Switches that connect to ground** (oil pressure, handbrake): anode to
+  ignition-switched +12 V through the 1 k resistor, cathode to the switch wire.
+- The resistor is 1 kOhm, 0.5 W. Leave it out if the board already has one.
+- Nothing on the car side connects to the dash board; only the optocoupler
+  outputs and GND do.
+- An input with nothing wired to it reads off. On a lead longer than about
+  half a metre, add a 4.7 kOhm pull-up from the GPIO to 3.3 V (EXT1 pin 1).
+
+Each input needs to hold for 30 ms before it is believed. The pin table and the
+polarity of each input are at the top of `components/dash_inputs/src/dash_inputs.c`.
+
+To see lamps the simulated drive never lights, on the Mac:
+
+    ./sim/build/dash_sim --lamps 0x3ef
 
 ## Changing screen
 

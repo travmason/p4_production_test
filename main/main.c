@@ -19,6 +19,7 @@
 #include "bsp/esp-bsp.h"
 #include "driver/gpio.h"
 #include "dash_can.h"
+#include "dash_inputs.h"
 #include "dash_signals.h"
 #include "dash_source.h"
 #include "dash_touch.h"
@@ -217,6 +218,12 @@ void app_main(void)
     const dash_can_cfg_t can_cfg = DASH_CAN_DEFAULT_CFG();
     if (dash_can_start(&can_cfg) != ESP_OK) {
         ESP_LOGW(TAG, "CAN unavailable; screens still change on the buttons");
+    }
+
+    /* Indicators, headlights and warning switches, straight off the car's
+       wiring through optocouplers. Independent of the ECU and CAN. */
+    if (dash_inputs_start() != ESP_OK) {
+        ESP_LOGW(TAG, "lamp inputs unavailable");
     }
 
     /* Simulator or ECU, per the saved mode. Owns starting the simulator. */

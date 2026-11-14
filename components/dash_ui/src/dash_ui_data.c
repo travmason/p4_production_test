@@ -132,6 +132,10 @@ static void format_lamps(char *out, size_t n, uint32_t tt)
         {DASH_TT_WARNING,      "!"},
         {DASH_TT_BRAKE,        "BRK"},
         {DASH_TT_OIL,          "OIL"},
+        {DASH_TT_TURN_LEFT,    "<"},
+        {DASH_TT_TURN_RIGHT,   ">"},
+        {DASH_TT_HEADLIGHT,    "LIGHTS"},
+        {DASH_TT_HIGH_BEAM,    "HIGH"},
         {DASH_TT_LOW_TEMP,     "ICE"},
     };
 

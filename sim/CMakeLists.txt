@@ -102,3 +102,11 @@ target_include_directories(test_rusefi PRIVATE "${COMP}/dash_can/include")
 target_compile_options(test_rusefi PRIVATE -Wall -Wextra)
 target_link_libraries(test_rusefi PRIVATE m)
 add_test(NAME rusefi_decoder COMMAND test_rusefi)
+
+add_executable(test_debounce
+    "${ROOT}/tests/test_debounce.c"
+    "${COMP}/dash_inputs/src/dash_debounce.c"
+)
+target_include_directories(test_debounce PRIVATE "${COMP}/dash_inputs/include")
+target_compile_options(test_debounce PRIVATE -Wall -Wextra)
+add_test(NAME debounce COMMAND test_debounce)

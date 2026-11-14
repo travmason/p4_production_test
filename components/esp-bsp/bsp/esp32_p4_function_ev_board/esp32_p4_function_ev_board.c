@@ -670,14 +670,19 @@ esp_err_t bsp_display_new_with_handles(const bsp_display_config_t *config, bsp_l
 #elif CONFIG_BSP_LCD_TYPE_HDMI
 
 /*
- * The LT8912B only accepts RGB888 on the DSI wire, but the DSI bridge can hold
- * an RGB565 frame buffer and convert as it streams. That is a third less PSRAM
- * read bandwidth per frame, which matters at high resolutions. Only the
- * 1600x720 modes below are wired up for it; the stock modes stay RGB888.
+ * The LT8912B only accepts RGB888 on the DSI wire. Holding an RGB565 frame
+ * buffer and letting the DSI bridge widen it as it streams would cut PSRAM read
+ * bandwidth by a third, and the 1600x720 modes below are wired up for it - but
+ * the bridge can only convert on ESP32-P4 rev 3.0 and later. On earlier silicon
+ * its input and output format registers alias, and the panel shows solid blue.
+ * So RGB565 is refused unless the build targets rev 3.0+ only.
  */
-#if !CONFIG_BSP_LCD_COLOR_FORMAT_RGB888 && \
-    !(CONFIG_BSP_LCD_HDMI_1600x720_60HZ || CONFIG_BSP_LCD_HDMI_1600x720_VENDOR)
+#if !CONFIG_BSP_LCD_COLOR_FORMAT_RGB888
+#if !(CONFIG_BSP_LCD_HDMI_1600x720_60HZ || CONFIG_BSP_LCD_HDMI_1600x720_VENDOR)
 #error The color format must be RGB888 in HDMI display type!
+#elif CONFIG_ESP32P4_REV_MIN_FULL < 300
+#error An RGB565 frame buffer over HDMI needs ESP32-P4 rev 3.0+ (solid blue panel on earlier silicon). Select RGB888.
+#endif
 #endif
 
 #if CONFIG_BSP_LCD_COLOR_FORMAT_RGB888

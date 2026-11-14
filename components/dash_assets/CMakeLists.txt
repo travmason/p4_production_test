@@ -5,7 +5,7 @@
 #     python tools/make_assets.py assets/dash_bg_source.png
 #
 # They are embedded rather than compiled as C arrays: the background alone is
-# 3.3 MB, which would be painfully slow as source.
+# 2.3 MB, which would be painfully slow as source.
 #
 idf_component_register(
     SRCS "src/dash_assets.c"

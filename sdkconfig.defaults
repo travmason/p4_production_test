@@ -13,7 +13,6 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=12288
 
 # --- Display: 1600x720 bar panel over HDMI (LT8912B) ---
-# The LT8912B path requires RGB888.
 CONFIG_BSP_LCD_TYPE_HDMI=y
 # The LT8912B path requires an RGB888 frame buffer. An RGB565 frame buffer with
 # RGB888 on the wire would be a third less PSRAM traffic, but the DSI bridge can
@@ -53,7 +52,7 @@ CONFIG_LV_FONT_MONTSERRAT_48=y
 # default and the 6 MB factory partition will not fit.
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 
-# The 3.3 MB background is embedded in the app, which needs more than the
+# The 2.3 MB background is embedded in the app, which needs more than the
 # 1.5 MB that singleapp_large provides. See partitions.csv. The table sits at
 # 0x10000 (partitions.csv places the first partition at 0x11000); the 0x8000
 # default would not match it.

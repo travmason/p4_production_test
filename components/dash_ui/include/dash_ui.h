@@ -1,9 +1,10 @@
 /*
  * dash_ui - the dashboard screens.
  *
- * Builds every screen and starts refreshing whichever is on show. Screens are
- * navigated by swiping up and down; dash_ui_next_screen() does the same thing
- * without touch, which is useful when no digitizer is attached.
+ * Builds the first screen and starts refreshing whichever is on show; the other
+ * screens are built the first time they are selected. Screens are navigated by
+ * swiping up and down; dash_ui_next_screen() does the same thing without touch,
+ * which is useful when no digitizer is attached.
  */
 
 #pragma once

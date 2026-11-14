@@ -136,9 +136,8 @@ void app_main(void)
     /*
      * Explicit display config rather than bsp_display_start()'s defaults.
      * Those enable software rotation, which makes esp_lvgl_port allocate a
-     * third full draw buffer - and with an RGB565 frame buffer it asks for that
-     * one to be DMA-capable internal RAM, which does not fit here. The cluster
-     * never rotates, so the whole buffer is waste.
+     * third full draw buffer, and that does not fit here. The cluster never
+     * rotates, so the whole buffer would be waste.
      */
     bsp_display_cfg_t disp_cfg = {
         .lvgl_port_cfg = ESP_LVGL_PORT_INIT_CONFIG(),
@@ -146,8 +145,8 @@ void app_main(void)
            does not compete with the DSI interrupt, the USB host stack and the
            signal source, which all sit on core 0. Set below, since the macro
            above initialises the whole struct. */
-        /* One 1600x40 RGB565 draw buffer is 128 KB of DMA-capable internal RAM,
-           out of roughly 337 KB free. A second one does not fit. */
+        /* The draw buffer matches the RGB888 frame buffer, so one 1600x40
+           buffer is 192 KB of internal RAM. A second one does not fit. */
         .buffer_size   = BSP_LCD_H_RES * 40,
         .double_buffer = false,
         .hw_cfg = {

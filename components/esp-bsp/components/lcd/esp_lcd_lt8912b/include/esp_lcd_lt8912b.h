@@ -295,6 +295,10 @@ bool esp_lcd_panel_lt8912b_is_ready(esp_lcd_panel_t *panel);
  * because that is what the LT8912B accepts. Choosing LCD_COLOR_FMT_RGB565 makes
  * the DSI bridge convert on the fly, which cuts the frame buffer - and so the
  * PSRAM read bandwidth the bridge needs every frame - by a third.
+ *
+ * That conversion only exists on ESP32-P4 rev 3.0 and later. On earlier silicon
+ * the bridge's input and output format registers alias, so RGB565 here gives a
+ * solid blue panel; use LCD_COLOR_FMT_RGB888.
  */
 #define LT8912B_1600x720_PANEL_60HZ_DPI_CONFIG() \
     LT8912B_1600x720_PANEL_60HZ_DPI_CONFIG_CF(1, LCD_COLOR_FMT_RGB888)

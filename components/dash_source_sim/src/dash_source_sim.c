@@ -77,8 +77,11 @@ static void sim_task(void *arg)
     float coolant   = 18.0f;   /* cold start */
     float oil_temp  = 18.0f;
     float fuel      = 78.0f;
-    float trip      = 12.4f;
-    float odo       = 124503.0f;
+    /* Distances accumulate in double. One tick adds about 0.002 km, which is
+       below a float's resolution at six-figure odometer readings (0.008 km at
+       124503), so a float total would never move. */
+    double trip     = 12.4;
+    double odo      = 124503.0;
     int   gear      = 1;
 
     /* Warning lamp demo: idle for a gap, light one or two lamps, repeat. */
@@ -179,8 +182,8 @@ static void sim_task(void *arg)
             .ambient_temp_c   = ambient,
             .oil_pressure_psi = oil,
             .turbo_psi        = turbo,
-            .trip_km          = trip,
-            .odometer_km      = odo,
+            .trip_km          = (float)trip,
+            .odometer_km      = (float)odo,
             .telltales        = tt,
             .gear             = gear,
         };

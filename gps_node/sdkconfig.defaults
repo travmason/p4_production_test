@@ -1,0 +1,14 @@
+CONFIG_IDF_TARGET="esp32s3"
+
+# Bluetooth LE, central role only: the node connects out to the Dragy and
+# never advertises or accepts connections itself.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=y
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=y
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=n
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+
+# 1 ms ticks, as on the dashboard.
+CONFIG_FREERTOS_HZ=1000

@@ -1,0 +1,46 @@
+menu "GPS node"
+
+    choice GPS_SOURCE
+        prompt "GPS receiver"
+        default GPS_SOURCE_DRAGY
+        help
+            Where the node gets its fixes. Either way the same CAN frames go
+            to the dashboard.
+
+        config GPS_SOURCE_DRAGY
+            bool "Dragy Pro over Bluetooth"
+        config GPS_SOURCE_UBLOX
+            bool "u-blox module on a UART"
+    endchoice
+
+    config GPS_CAN_TX_GPIO
+        int "CAN TX GPIO (to the transceiver's TXD)"
+        default 5
+
+    config GPS_CAN_RX_GPIO
+        int "CAN RX GPIO (from the transceiver's RXD)"
+        default 4
+
+    config GPS_CAN_BITRATE
+        int "CAN bit rate"
+        default 500000
+        help
+            Must match the ECU and the dashboard. 125000, 250000, 500000 or
+            1000000.
+
+    config GPS_UBLOX_RX_GPIO
+        int "u-blox UART: GPIO receiving from the module's TX"
+        depends on GPS_SOURCE_UBLOX
+        default 18
+
+    config GPS_UBLOX_TX_GPIO
+        int "u-blox UART: GPIO sending to the module's RX (-1 = not wired)"
+        depends on GPS_SOURCE_UBLOX
+        default 17
+
+    config GPS_UBLOX_BAUD
+        int "u-blox UART baud rate"
+        depends on GPS_SOURCE_UBLOX
+        default 115200
+
+endmenu

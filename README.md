@@ -187,7 +187,8 @@ and wiring it is in [gps_node/README.md](gps_node/README.md).
   after stopping; a power cut at speed loses at most 500 m. Below 1.5 km/h
   counts as stopped, so GPS noise cannot creep it along while parked.
 - **Clock** is set from GPS. GPS time is UTC, so set your zone in
-  `DASH_TIMEZONE` above `app_main` in `main/main.c`. It is `UTC0` until you do.
+  `DASH_TIMEZONE` above `app_main` in `main/main.c`. It is set for Sydney and
+  Melbourne, daylight saving included.
 
 Setting the odometer to the car's real reading, once: either set
 `DASH_ODO_INITIAL_KM` in `components/dash_odo/include/dash_odo.h` before the

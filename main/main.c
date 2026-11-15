@@ -152,7 +152,7 @@ static void button_task(void *arg)
  *   "EST5EDT,M3.2.0,M11.1.0"            US Eastern
  *   "PST8PDT,M3.2.0,M11.1.0"            US Pacific
  */
-#define DASH_TIMEZONE  "UTC0"
+#define DASH_TIMEZONE  "AEST-10AEDT,M10.1.0,M4.1.0/3"
 
 void app_main(void)
 {

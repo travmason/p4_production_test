@@ -18,9 +18,12 @@ history.
   real ECU.
 - Lights, indicators and the handbrake switch are read from optocoupler inputs.
   Not yet tried on hardware.
-- Odometer and outside temperature have no real source yet.
-- The clock is seeded from the build time at every boot, so it is wrong after a
-  power cycle.
+- Speed, distance and time come from a separate GPS node on the CAN bus
+  (`gps_node/`), with the ECU's vehicle speed as the fallback. The odometer and
+  trip are kept in flash. Not yet tried on hardware.
+- Outside temperature has no real source yet.
+- The clock starts from the build time at every boot and is set from GPS as
+  soon as there is a fix.
 - Touch (USB HID from the panel) is present in the code but parked.
 
 ## Build and flash
@@ -73,6 +76,10 @@ underruns, PSRAM bandwidth and frame rate can only be judged on the hardware.
 | `tools/make_assets.py`       | Turns `assets/dash_bg_source.png` into the embedded assets   |
 | `components/dash_source`     | Chooses simulator or ECU; keeps the mode in flash            |
 | `components/dash_inputs`     | Lamp circuits on GPIO, through optocouplers                  |
+| `components/dash_gps_proto`  | GPS node CAN frames and UBX parser, shared with `gps_node/`  |
+| `components/dash_odo`        | Odometer and trip, kept in flash                             |
+| `components/dash_store`      | The few kept values, in NVS                                  |
+| `gps_node/`                  | Separate firmware: ESP32-S3 GPS node (Dragy Pro, Bluetooth)  |
 | `sim/`                       | Mac simulator: SDL window plus host stand-ins for ESP-IDF    |
 
 ## Wiring
@@ -163,6 +170,30 @@ The mode is kept in flash. To step through auto, simulated, live:
 In the Mac simulator, `M` steps the mode and `E` connects a pretend ECU;
 `--source live` and `--ecu` set them from the command line.
 
+## GPS, speed and the odometer
+
+`gps_node/` is firmware for a second board, an ESP32-S3, which reads a Dragy
+Pro over Bluetooth and sends speed, position and time on the CAN bus. Building
+and wiring it is in [gps_node/README.md](gps_node/README.md).
+
+- **Speed** comes from GPS whenever the node has a fix. With no node, or no
+  fix (a tunnel, a cold start), it comes from the ECU's vehicle speed. Losing
+  the ECU does not affect GPS speed, and losing GPS does not affect the engine
+  gauges.
+- **NO GPS** shows in the top-left label when a car that has had a GPS node has
+  no fix. A dashboard that has never seen a node does not warn.
+- **Odometer and trip** are the dashboard's own, kept in flash, counted from
+  whichever source is supplying speed. Saved every 500 m and a few seconds
+  after stopping; a power cut at speed loses at most 500 m. Below 1.5 km/h
+  counts as stopped, so GPS noise cannot creep it along while parked.
+- **Clock** is set from GPS. GPS time is UTC, so set your zone in
+  `DASH_TIMEZONE` above `app_main` in `main/main.c`. It is `UTC0` until you do.
+
+Setting the odometer to the car's real reading, once: either set
+`DASH_ODO_INITIAL_KM` in `components/dash_odo/include/dash_odo.h` before the
+first flash, or send CAN ID `0x600` with byte 0 = `0x31` and the kilometres in
+bytes 1-4, little-endian. `0x600` with byte 0 = `0x30` resets the trip.
+
 ## ECU data
 
 The dash reads rusEFI's native "verbose" broadcast: twelve frames on IDs
@@ -181,7 +212,7 @@ forces the bus to 1 Mbit/s, so turn it off to run at 500 kbit/s.
 Taken from the ECU: RPM, vehicle speed, coolant temperature, oil temperature
 and pressure, manifold pressure (shown as boost against a standard atmosphere),
 fuel level, gear, check-engine, and a charge warning when the engine is turning
-below 12.0 V. The trip meter shows the ECU's distance since power-up.
+below 12.0 V.
 
 **Low oil pressure** is judged from the ECU's oil pressure and RPM. With the
 engine running (500 rpm or more) the pressure gauge turns red and the warning
@@ -191,11 +222,8 @@ seconds after a start are ignored. The limits are in
 `components/dash_can/include/dash_oil_alarm.h`; set them for the engine.
 
 If the ECU stops sending for one second, what it supplied drops to zero and the
-label reads NO ECU, rather than the last values staying frozen. Speed and
-distance are meant to come from the GPS node on the same bus, with the ECU's
-vehicle speed as the fallback, so an ECU fault will not zero them once that
-node exists. Until it does, the ECU is the only speed source and speed drops
-to zero with it.
+label reads NO ECU, rather than the last values staying frozen. Speed is the
+exception when the GPS node has a fix: it is GPS's, and stays.
 
 The decoder is `components/dash_can/src/dash_rusefi.c`. It is tested on the Mac
 against the layout in rusEFI's `rusEFI_CAN_verbose.dbc`:

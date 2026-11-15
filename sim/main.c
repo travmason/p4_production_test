@@ -201,10 +201,13 @@ static bool save_bmp(const char *path, const uint8_t *pixels, uint32_t w, uint32
     return fclose(f) == 0 && ok;
 }
 
+static void hold_forced_lamps(void);
+
 static int run_screenshot(const options_t *o)
 {
     const uint32_t end = now_ms() + (uint32_t)(o->after_s * 1000.0f);
     while ((int32_t)(end - now_ms()) > 0) {
+        hold_forced_lamps();
         lv_timer_handler();
         usleep(5000);
     }
@@ -283,9 +286,21 @@ static bool handle_keys(void)
     return true;
 }
 
+/* --lamps: dash_telltale_t bits held on whenever live data is showing, or -1.
+   Stands in for dash_inputs and the ECU's alerts, neither of which exist here. */
+static long s_forced_lamps = -1;
+
+static void hold_forced_lamps(void)
+{
+    if (s_forced_lamps >= 0 && dash_source_live_writes_allowed()) {
+        dash_signals_set_telltale((uint32_t)s_forced_lamps, true);
+    }
+}
+
 static int run_window(void)
 {
     while (handle_keys()) {
+        hold_forced_lamps();
         uint32_t wait = lv_timer_handler();
         if (wait > 10) {
             wait = 10;
@@ -333,12 +348,7 @@ int main(int argc, char **argv)
     }
     dash_ui_set_source_chip_cb(dash_source_cycle_mode);
     dash_ui_set_gps_warning(o.no_gps);
-    if (o.lamps >= 0) {
-        /* Stands in for dash_inputs: wait for the source manager's wipe on
-           entering live mode, then light the lamps. */
-        usleep(400000);
-        dash_signals_set_telltale((uint32_t)o.lamps, true);
-    }
+    s_forced_lamps = o.lamps;
     if (o.screen != 0) {
         dash_ui_set_screen(o.screen);
     }

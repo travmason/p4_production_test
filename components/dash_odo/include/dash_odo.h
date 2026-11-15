@@ -22,12 +22,17 @@ extern "C" {
 #endif
 
 /**
- * The odometer reading to start from on a board that has never kept one - set
- * this to the car's real odometer before the first flash, or set it afterwards
- * with dash_odo_set_total_km() (CAN command 0x31, see dash_can.h).
+ * The car's odometer reading when this dashboard was fitted.
+ *
+ * Written to flash the first time the firmware runs on a board that has no
+ * odometer kept yet, and never again: from then on the kept value is the
+ * odometer, and re-flashing the firmware does not bring this number back. To
+ * change the reading on a board that already has one, use
+ * dash_odo_set_total_km() (CAN command 0x31, see dash_can.h) or erase the
+ * flash (`idf.py erase-flash`) before flashing.
  */
 #ifndef DASH_ODO_INITIAL_KM
-#define DASH_ODO_INITIAL_KM  0u
+#define DASH_ODO_INITIAL_KM  83483u
 #endif
 
 /** Load the kept values and start the saving task. */

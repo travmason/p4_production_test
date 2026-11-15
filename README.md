@@ -190,10 +190,13 @@ and wiring it is in [gps_node/README.md](gps_node/README.md).
   `DASH_TIMEZONE` above `app_main` in `main/main.c`. It is set for Sydney and
   Melbourne, daylight saving included.
 
-Setting the odometer to the car's real reading, once: either set
-`DASH_ODO_INITIAL_KM` in `components/dash_odo/include/dash_odo.h` before the
-first flash, or send CAN ID `0x600` with byte 0 = `0x31` and the kilometres in
-bytes 1-4, little-endian. `0x600` with byte 0 = `0x30` resets the trip.
+The odometer starts at **83,483 km**, the car's reading when the dashboard was
+fitted (`DASH_ODO_INITIAL_KM` in `components/dash_odo/include/dash_odo.h`). It
+is written to flash the first time the firmware runs on a board with no
+odometer kept, and not again: re-flashing does not reset it. To change it
+later, send CAN ID `0x600` with byte 0 = `0x31` and the kilometres in bytes
+1-4, little-endian, or erase the flash before flashing. `0x600` with byte 0 =
+`0x30` resets the trip.
 
 ## ECU data
 

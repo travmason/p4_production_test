@@ -15,6 +15,8 @@ static const char *TAG = "dash_odo";
 /* Kept as whole metres in 32 bits: good for 4.29 million km. */
 #define KEY_TOTAL_M   "odo_m"
 #define KEY_TRIP_M    "trip0_m"
+/* Never a real reading: it is 4.29 million km. */
+#define NO_VALUE      0xFFFFFFFFu
 
 #define SAVE_EVERY_M        500.0
 #define SAVE_STOPPED_MS     3000u
@@ -74,7 +76,17 @@ esp_err_t dash_odo_start(void)
         return ESP_ERR_NO_MEM;
     }
 
-    const uint32_t total = dash_store_get_u32(KEY_TOTAL_M, DASH_ODO_INITIAL_KM * 1000u);
+    /* No odometer kept yet: this is the first run on this board. Start from
+       the car's reading and put it in flash now, so it is there even if the
+       car never moves before the next power cycle. */
+    uint32_t total = dash_store_get_u32(KEY_TOTAL_M, NO_VALUE);
+    if (total == NO_VALUE) {
+        total = DASH_ODO_INITIAL_KM * 1000u;
+        const bool kept = dash_store_set_u32(KEY_TOTAL_M, total) &&
+                          dash_store_set_u32(KEY_TRIP_M, total);
+        ESP_LOGW(TAG, "first run: odometer started at %u km%s", (unsigned)DASH_ODO_INITIAL_KM,
+                 kept ? "" : " (COULD NOT BE SAVED)");
+    }
     const uint32_t trip0 = dash_store_get_u32(KEY_TRIP_M, total);
     dash_odo_core_init(&s_core, (double)total, (double)trip0);
     s_saved_total_m = s_core.total_m;
